@@ -830,8 +830,6 @@ async function loadData(forceDatasetId = null) {
     sheetLayout = null;
 
     const obj = await fetchSessionRowsFromApi();
-    const source = "API";
-
     headers = obj.headers;
     rawRows = obj.rows;
     if (!headers.length) throw new Error("Dataset vide depuis API");
@@ -847,7 +845,6 @@ async function loadData(forceDatasetId = null) {
     applySort();
     render();
 
-    setStatus(`Charge (${source})`, "ok");
   } catch (e) {
     console.error(e);
     setStatus("Erreur de chargement API", "bad");

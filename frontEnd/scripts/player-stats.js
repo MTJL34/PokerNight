@@ -271,7 +271,6 @@ function renderForSelectedPlayerSmooth() {
 }
 
 async function loadData() {
-  setStatus("Chargement des données…");
   els.refreshBtn.disabled = true;
   try {
     const [players, sessions, entries, buyins, payouts] = await Promise.all([
