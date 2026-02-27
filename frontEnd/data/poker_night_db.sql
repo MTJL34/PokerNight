@@ -128,8 +128,7 @@ INSERT INTO sessions (session_id, session_name) VALUES
   (5, 'Poker 5'),
   (6, 'Poker 6'),
   (7, 'Poker 7'),
-  (8, 'Poker 8'),
-  (9, 'Poker 9');
+  (8, 'Poker 8');
 
 INSERT INTO session_entries (session_id, player_id, position_id) VALUES
   (1, 2, 1),
@@ -195,15 +194,7 @@ INSERT INTO session_entries (session_id, player_id, position_id) VALUES
   (8, 6, 5),
   (8, 1, 6),
   (8, 3, 7),
-  (8, 5, 8),
-  (9, 1, 1),
-  (9, 2, 2),
-  (9, 3, 3),
-  (9, 4, 4),
-  (9, 5, 5),
-  (9, 6, 6),
-  (9, 7, 7),
-  (9, 8, 8);
+  (8, 5, 8);
 
 INSERT INTO entry_buyins (session_id, player_id, buyin_no, amount) VALUES
   (1, 2, 1, 10),
@@ -345,15 +336,7 @@ INSERT INTO entry_buyins (session_id, player_id, buyin_no, amount) VALUES
   (8, 3, 3, 10),
   (8, 5, 1, 10),
   (8, 5, 2, 10),
-  (8, 5, 3, 10),
-  (9, 1, 1, 10),
-  (9, 2, 1, 10),
-  (9, 3, 1, 10),
-  (9, 4, 1, 10),
-  (9, 5, 1, 10),
-  (9, 6, 1, 10),
-  (9, 7, 1, 10),
-  (9, 8, 1, 10);
+  (8, 5, 3, 10);
 
 INSERT INTO session_payouts (session_id, rank_no, player_id, amount) VALUES
   (1, 1, 2, 120),
@@ -379,10 +362,8 @@ INSERT INTO session_payouts (session_id, rank_no, player_id, amount) VALUES
   (7, 3, 4, 20),
   (8, 1, 9, 100),
   (8, 2, 2, 60),
-  (8, 3, 4, 30),
-  (9, 1, 1, 80);
+  (8, 3, 4, 30);
 
 COMMIT;
 ALTER TABLE players
 ADD CONSTRAINT uq_players_name UNIQUE (player_name);
-

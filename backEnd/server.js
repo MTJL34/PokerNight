@@ -4,6 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const db = require("./config/db");
+const adminWriteGuard = require("./middleware/adminWriteGuard");
 
 const playersRoutes = require("./routes/playersRoutes");
 const sessionsRoutes = require("./routes/sessionsRoutes");
@@ -26,6 +27,8 @@ app.get("/health", async (_req, res, next) => {
     next(err);
   }
 });
+
+app.use("/api", adminWriteGuard);
 
 app.use("/api/players", playersRoutes);
 app.use("/api/sessions", sessionsRoutes);

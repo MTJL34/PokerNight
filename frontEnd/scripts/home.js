@@ -27,6 +27,7 @@ const MISES_URL = "./data/mises.json";
 const API_BASES = window.location.origin?.startsWith("http")
   ? ["", "http://localhost:8000"]
   : ["http://localhost:8000"];
+const ADMIN_KEY_STORAGE = "poker_admin_key";
 
 const els = {
   statusBadge: document.getElementById("statusBadge"),
@@ -709,11 +710,21 @@ function buildColumnSelect() {
 }
 
 async function apiFetch(path, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  if (!["GET", "HEAD", "OPTIONS"].includes(method) && !headers["x-admin-key"]) {
+    const saved = String(sessionStorage.getItem(ADMIN_KEY_STORAGE) || "").trim();
+    const entered = saved || String(window.prompt("Entrez la clé admin :") || "").trim();
+    if (!entered) throw new Error("Admin key required");
+    sessionStorage.setItem(ADMIN_KEY_STORAGE, entered);
+    headers["x-admin-key"] = entered;
+  }
+
   let lastError = null;
   for (const base of API_BASES) {
     try {
       const res = await fetch(`${base}${path}`, {
-        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        headers,
         ...options
       });
       if (!res.ok) {
@@ -723,6 +734,9 @@ async function apiFetch(path, options = {}) {
           detail = body?.detail || body?.message || "";
         } catch {
           // ignore parse errors
+        }
+        if (res.status === 401 || res.status === 403) {
+          sessionStorage.removeItem(ADMIN_KEY_STORAGE);
         }
         lastError = new Error(`API ${res.status}${detail ? `: ${detail}` : ""}`);
         continue;

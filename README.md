@@ -22,6 +22,7 @@ cp .env.example .env
 ```
 
 3. Remplir `.env` avec vos accès MySQL.
+   - Définir aussi `ADMIN_API_KEY` pour autoriser les écritures (POST/PUT/DELETE).
 
 4. Initialiser la base :
 - importer `frontEnd/data/poker_night_db.sql` dans la base `poker_night_db`
@@ -71,7 +72,7 @@ Le fichier `render.yaml` est inclus.
 
 1. Connecter le repo GitHub à Render.
 2. Créer un service Web depuis ce repo.
-3. Renseigner les variables d'environnement DB (`DB_HOST`, `DB_USER`, etc.).
+3. Renseigner les variables d'environnement DB (`DB_HOST`, `DB_USER`, etc.) et `ADMIN_API_KEY`.
 4. Déployer.
 
 Render utilisera :

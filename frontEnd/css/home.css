@@ -25,23 +25,24 @@ body{
   font-family:"Manrope", "Avenir Next", "Segoe UI", sans-serif;
 }
 
-.container{ width:min(1100px, 92vw); margin:0 auto; padding:20px 0; }
+.container{ width:min(100%, 96vw); margin:0 auto; padding:14px 0; }
 
-body.sessionMode .container{
-  width:min(1800px, 98vw);
-}
+body.sessionMode .container{ width:min(100%, 96vw); }
 
-.top{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.top{ display:flex; align-items:flex-start; justify-content:space-between; flex-direction:column; gap:12px; }
 h1{ margin:0; font-size:28px; }
 h2{
   margin:0;
-  font-size:24px;
+  font-size:21px;
+  line-height:1.1;
   letter-spacing:.4px;
   font-family:"Bebas Neue", "Impact", sans-serif;
 }
 .muted{ color:var(--muted); }
 
 .badge{
+  width:100%;
+  text-align:center;
   padding:7px 12px;
   border:1px solid var(--line);
   border-radius:999px;
@@ -54,7 +55,7 @@ h2{
 .controls{
   margin-top:16px;
   display:grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr;
   gap:12px;
   align-items:end;
 }
@@ -68,7 +69,8 @@ h2{
 
 input, select{
   width:100%;
-  padding:11px 12px;
+  padding:10px 11px;
+  font-size:16px;
   border-radius:12px;
   border:1px solid var(--line);
   background:rgba(5,17,12,.55);
@@ -84,7 +86,9 @@ input:focus, select:focus{
 }
 
 .btn{
-  padding:10px 15px;
+  width:100%;
+  padding:11px 12px;
+  font-size:14px;
   border-radius:12px;
   border:1px solid rgba(224,180,91,.65);
   background:linear-gradient(180deg, rgba(224,180,91,.24), rgba(224,180,91,.12));
@@ -107,7 +111,7 @@ input:focus, select:focus{
 
 .cards{
   display:grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap:12px;
   margin-top:10px;
 }
@@ -125,10 +129,10 @@ input:focus, select:focus{
 .card__v{ margin-top:8px; font-size:20px; font-weight:700; }
 
 .panel{
-  margin-top:14px;
+  margin-top:10px;
   background:linear-gradient(180deg, rgba(15,36,27,.95), rgba(10,24,18,.95));
   border:1px solid var(--line);
-  border-radius:var(--radius);
+  border-radius:12px;
   overflow:hidden;
   box-shadow:0 16px 40px rgba(0,0,0,.28);
 }
@@ -136,19 +140,20 @@ input:focus, select:focus{
 .isHidden{ display:none !important; }
 
 .panel__head{
-  padding:14px;
+  padding:12px;
   display:flex;
-  justify-content:space-between;
-  align-items:baseline;
-  gap:12px;
+  justify-content:flex-start;
+  align-items:flex-start;
+  flex-direction:column;
+  gap:8px;
   border-bottom:1px solid var(--line);
   background:linear-gradient(180deg, rgba(224,180,91,.22), rgba(224,180,91,.08));
 }
 
-.panel__meta{ display:flex; gap:10px; color:var(--muted); font-size:12px; }
+.panel__meta{ display:flex; gap:8px; flex-wrap:wrap; color:var(--muted); font-size:12px; }
 
 .leaderboard{
-  padding:10px 14px 14px;
+  padding:10px;
   display:grid;
   gap:10px;
 }
@@ -203,12 +208,12 @@ input:focus, select:focus{
 
 .sessionTables{
   display:grid;
-  gap:12px;
+  gap:10px;
 }
 
 .sessionCard{
   border:1px solid var(--line);
-  border-radius:12px;
+  border-radius:10px;
   background:linear-gradient(180deg, rgba(5,16,12,.7), rgba(5,16,12,.45));
   overflow:hidden;
 }
@@ -218,6 +223,22 @@ input:focus, select:focus{
   padding:12px 12px;
   font-size:15px;
   border-bottom:1px solid var(--line);
+  display:flex !important;
+  flex-direction:column;
+  align-items:flex-start !important;
+  gap:8px !important;
+}
+
+.sessionCard__title span[style]{
+  width:100%;
+  display:flex !important;
+  gap:8px !important;
+  flex-wrap:wrap;
+}
+
+.sessionCard__title .btn{
+  width:auto;
+  min-width:120px;
 }
 
 .sessionCard__wrap{ overflow:auto; }
@@ -229,7 +250,8 @@ input:focus, select:focus{
 
 .sessionCard__table th,
 .sessionCard__table td{
-  padding:8px 10px;
+  font-size:13px;
+  padding:8px 9px;
   border-bottom:1px solid rgba(29,42,68,.65);
   text-align:left;
 }
@@ -268,7 +290,8 @@ input:focus, select:focus{
 .megaTable th,
 .megaTable td{
   border:1px solid rgba(255,255,255,.22);
-  padding:7px 10px;
+  padding:6px 8px;
+  font-size:13px;
   white-space:nowrap;
   text-align:center;
 }
@@ -344,13 +367,13 @@ input:focus, select:focus{
 }
 
 body.sessionMode .cards{
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: 1fr;
 }
 
 body.sessionMode .megaTable th,
 body.sessionMode .megaTable td{
-  padding:7px 9px;
-  font-size:14px;
+  padding:6px 7px;
+  font-size:12px;
 }
 
 body.sessionMode .leaderboard{
@@ -412,8 +435,8 @@ thead th{
   backdrop-filter: blur(6px);
   z-index:2;
   text-align:left;
-  padding:12px;
-  font-size:12px;
+  padding:9px 10px;
+  font-size:13px;
   color:var(--muted);
   border-bottom:1px solid var(--line);
   cursor:pointer;
@@ -425,8 +448,9 @@ thead th{
   position:sticky;
   left:0;
   z-index:3;
-  width:54px;
-  min-width:54px;
+  width:42px;
+  min-width:42px;
+  font-size:12px;
   text-align:center;
   color:var(--muted);
   background:rgba(7,10,16,.96);
@@ -439,7 +463,8 @@ thead th{
 }
 
 tbody td{
-  padding:12px;
+  padding:9px 10px;
+  font-size:13px;
   border-bottom:1px solid rgba(29,42,68,.65);
   vertical-align:top;
 }
@@ -451,14 +476,192 @@ tbody tr:hover{ background:rgba(224,180,91,.08); }
 
 .footer{ padding-bottom:28px; }
 
-@media (max-width: 920px){
-  .cards{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .controls{ grid-template-columns: 1fr; }
-  .btn{ width:100%; }
-  body.sessionMode .cards{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tableWrap,
+.megaWrap,
+.sessionCard__wrap{
+  -webkit-overflow-scrolling:touch;
+  overflow:auto;
 }
 
-@media (max-width: 520px){
-  .cards{ grid-template-columns: 1fr; }
-  .controls{ grid-template-columns: 1fr; }
+@media (min-width: 521px){
+  .top{
+    align-items:center;
+    justify-content:space-between;
+    flex-direction:row;
+  }
+
+  .badge{
+    width:auto;
+    text-align:left;
+  }
+
+  .cards{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body.sessionMode .cards{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  input, select{
+    padding:11px 12px;
+    font-size:inherit;
+  }
+
+  .btn{
+    padding:10px 15px;
+    font-size:inherit;
+  }
+
+  thead th{
+    padding:12px;
+    font-size:12px;
+  }
+
+  tbody td{
+    padding:12px;
+    font-size:inherit;
+  }
+
+  .rowNumHead,
+  .rowNumCell{
+    width:54px;
+    min-width:54px;
+    font-size:inherit;
+  }
+
+  .sessionTables{
+    gap:12px;
+  }
+
+  .sessionCard{
+    border-radius:12px;
+  }
+
+  .sessionCard__table th,
+  .sessionCard__table td{
+    padding:8px 10px;
+  }
+}
+
+@media (min-width: 761px){
+  .container{
+    width:min(1100px, 92vw);
+    padding:20px 0;
+  }
+
+  body.sessionMode .container{
+    width:min(1800px, 98vw);
+  }
+
+  h2{
+    font-size:24px;
+    line-height:normal;
+  }
+
+  .panel{
+    margin-top:14px;
+    border-radius:var(--radius);
+  }
+
+  .panel__head{
+    padding:14px;
+    justify-content:space-between;
+    align-items:baseline;
+    flex-direction:row;
+    gap:12px;
+  }
+
+  .panel__meta{
+    gap:10px;
+    flex-wrap:nowrap;
+  }
+
+  .leaderboard{
+    padding:10px 14px 14px;
+  }
+
+  .megaTable th,
+  .megaTable td{
+    padding:7px 10px;
+    font-size:inherit;
+  }
+
+  body.sessionMode .megaTable th,
+  body.sessionMode .megaTable td{
+    padding:7px 9px;
+    font-size:14px;
+  }
+
+  .sessionCard__title{
+    display:block !important;
+  }
+
+  .sessionCard__title span[style]{
+    width:auto;
+    display:inline-flex !important;
+    gap:10px !important;
+    flex-wrap:nowrap;
+  }
+
+  .sessionCard__title .btn{
+    min-width:0;
+  }
+}
+
+@media (min-width: 921px){
+  .controls{
+    grid-template-columns: 1fr auto auto auto;
+  }
+
+  .btn{
+    width:auto;
+  }
+
+  .cards{
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  body.sessionMode .cards{
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px){
+  .leaderboard .megaWrap{
+    border:1px solid rgba(224,180,91,.45);
+    border-radius:10px;
+    box-shadow:0 8px 24px rgba(0,0,0,.25) inset;
+    background:rgba(5,16,12,.55);
+  }
+
+  .megaTable{
+    width:max-content;
+    min-width:760px;
+  }
+
+  .megaTable th,
+  .megaTable td{
+    padding:8px 10px;
+    font-size:13px;
+  }
+
+  .megaTable thead th{
+    position:sticky;
+    top:0;
+    z-index:4;
+    box-shadow:0 2px 0 rgba(0,0,0,.25);
+  }
+
+  .megaTable thead th:first-child,
+  .megaTable tbody td:first-child{
+    position:sticky;
+    left:0;
+    z-index:3;
+    box-shadow:2px 0 0 rgba(0,0,0,.25);
+  }
+
+  .megaTable thead th:first-child{
+    z-index:5;
+  }
 }
