@@ -1,0 +1,988 @@
+import {
+  LS_PLAYERS_KEY,
+  LS_SESSION_KEY,
+  loadJsonWithOverride,
+  readLocalOverride,
+  writeLocalOverride
+} from "./lib/local-overrides.js";
+import {
+  escapeAttr,
+  escapeHTML,
+  formatAmount,
+  normalizeText,
+  parseCSV,
+  parseMoney,
+  toColumnLabel,
+  toObjects
+} from "./lib/home-helpers.js";
+
+// === CONFIG ===
+const DATASETS_URL = "./data/datasets.json";
+const LOCAL_JSON_URL = "./data/session.json";
+const LOCAL_CSV_URL = "./data/poker_benefice_net.csv";
+const TABLE_LAYOUT_URL = "./data/poker_tableau_layout.json";
+const PLAYERS_URL = "./data/players.json";
+const POSITIONS_URL = "./data/positions.json";
+const MISES_URL = "./data/mises.json";
+const API_BASES = window.location.origin?.startsWith("http")
+  ? ["", "http://localhost:8000"]
+  : ["http://localhost:8000"];
+
+const els = {
+  statusBadge: document.getElementById("statusBadge"),
+  datasetSelect: document.getElementById("datasetSelect"),
+  sessionField: document.getElementById("sessionField"),
+  sessionSelect: document.getElementById("sessionSelect"),
+  searchInput: document.getElementById("searchInput"),
+  columnSelect: document.getElementById("columnSelect"),
+  columnFilterInput: document.getElementById("columnFilterInput"),
+  refreshBtn: document.getElementById("refreshBtn"),
+  importBtn: document.getElementById("importBtn"),
+  exportBtn: document.getElementById("exportBtn"),
+  importInput: document.getElementById("importInput"),
+  statsCards: document.getElementById("statsCards"),
+  leaderboard: document.getElementById("leaderboard"),
+  leaderboardMeta: document.getElementById("leaderboardMeta"),
+  dataPanel: document.getElementById("dataPanel"),
+  rowCount: document.getElementById("rowCount"),
+  colCount: document.getElementById("colCount"),
+  table: document.getElementById("dataTable"),
+  thead: document.querySelector("#dataTable thead"),
+  tbody: document.querySelector("#dataTable tbody"),
+};
+
+let rawRows = [];
+let headers = [];
+let viewRows = [];
+let sortState = { key: null, dir: "asc" };
+let datasetsCatalog = [];
+let activeDatasetId = "";
+let sheetLayout = null;
+let playersById = null;
+let positionsById = null;
+let misesById = null;
+let importedDatasetName = "";
+let summarySortState = { key: "net", dir: "desc", sessionId: "" };
+
+const MONEY_HEADERS = /(benefice|bénéfice|resultat|résultat|solde|net|gain|profit)/i;
+const PLAYER_HEADERS = /(joueur|player|pseudo|nom)/i;
+
+function isSpreadsheetMode() {
+  return activeDatasetId === "tableau_complet";
+}
+
+function isOriginalSheetMode() {
+  return isSpreadsheetMode() && sheetLayout && Array.isArray(sheetLayout.rows) && sheetLayout.rows.length > 0;
+}
+
+function displayHeaderName(header, idx) {
+  if (isSpreadsheetMode()) return toColumnLabel(idx);
+  return header;
+}
+
+function setStatus(text, kind = "idle") {
+  els.statusBadge.textContent = text;
+  const colors = {
+    idle: "rgba(255,255,255,.03)",
+    ok: "rgba(46,204,113,.12)",
+    warn: "rgba(241,196,15,.12)",
+    bad: "rgba(231,76,60,.12)"
+  };
+  els.statusBadge.style.background = colors[kind] || colors.idle;
+  els.statusBadge.style.borderColor = "rgba(29,42,68,.85)";
+}
+
+function applyFilters() {
+  const q = normalizeText(els.searchInput?.value ?? "");
+  const col = els.columnSelect?.value ?? "";
+  const colNeedle = normalizeText(els.columnFilterInput?.value ?? "");
+  const selectedSession = String(els.sessionSelect?.value ?? "");
+
+  let out = [...rawRows];
+
+  if (isSessionRows() && selectedSession) {
+    out = out.filter(obj => String(obj.session_numero ?? "") === selectedSession);
+  }
+
+  // Recherche globale
+  if (q) {
+    out = out.filter(obj => headers.some(h => normalizeText(obj[h]).includes(q)));
+  }
+
+  // Filtre sur colonne spécifique
+  if (col && colNeedle) {
+    out = out.filter(obj => normalizeText(obj[col]).includes(colNeedle));
+  }
+
+  viewRows = out;
+  applySort();
+  render();
+}
+
+function buildSessionSelect() {
+  if (!els.sessionSelect || !els.sessionField) return;
+  if (!isSessionRows()) {
+    els.sessionField.classList.add("isHidden");
+    els.sessionSelect.innerHTML = "";
+    return;
+  }
+
+  const current = String(els.sessionSelect.value || "");
+  const sessions = [...new Set(rawRows.map(r => String(r.session_numero ?? "").trim()).filter(Boolean))]
+    .sort((a, b) => Number(a) - Number(b));
+  const nameById = {};
+  for (const row of rawRows) {
+    const sid = String(row.session_numero ?? "").trim();
+    const sname = String(row.session_nom ?? "").trim();
+    if (sid && sname && !nameById[sid]) nameById[sid] = sname;
+  }
+
+  els.sessionField.classList.remove("isHidden");
+  els.sessionSelect.innerHTML = `
+    <option value="">Toutes les sessions</option>
+    ${sessions.map(sid => `<option value="${escapeAttr(sid)}">${escapeHTML(nameById[sid] || `Session ${sid}`)}</option>`).join("")}
+  `;
+
+  if (current && sessions.includes(current)) {
+    els.sessionSelect.value = current;
+  } else {
+    els.sessionSelect.value = "";
+  }
+}
+
+function inferPokerColumns() {
+  const playerCol = headers.find(h => PLAYER_HEADERS.test(h)) || null;
+  const moneyCol = headers.find(h => MONEY_HEADERS.test(h)) || null;
+  return { playerCol, moneyCol };
+}
+
+function computeLeaderboard(rows) {
+  const { playerCol, moneyCol } = inferPokerColumns();
+  if (!playerCol || !moneyCol) return { items: [], playerCol, moneyCol };
+
+  const map = new Map();
+  for (const row of rows) {
+    const player = String(row[playerCol] ?? "").trim();
+    const amount = parseMoney(row[moneyCol]);
+    if (!player || amount === null) continue;
+    map.set(player, (map.get(player) ?? 0) + amount);
+  }
+
+  const items = [...map.entries()]
+    .map(([name, amount]) => ({ name, amount }))
+    .sort((a, b) => b.amount - a.amount);
+
+  return { items, playerCol, moneyCol };
+}
+
+function applySort() {
+  const { key, dir } = sortState;
+  if (!key) return;
+
+  const mul = dir === "asc" ? 1 : -1;
+
+  viewRows.sort((a, b) => {
+    const av = a[key] ?? "";
+    const bv = b[key] ?? "";
+
+    // Tri numérique si possible
+    const an = Number(String(av).replace(",", "."));
+    const bn = Number(String(bv).replace(",", "."));
+    const aNum = Number.isFinite(an) && String(av).trim() !== "";
+    const bNum = Number.isFinite(bn) && String(bv).trim() !== "";
+
+    if (aNum && bNum) return (an - bn) * mul;
+
+    return String(av).localeCompare(String(bv), "fr", {
+      numeric: true,
+      sensitivity: "base"
+    }) * mul;
+  });
+}
+
+function toggleSort(key) {
+  if (isOriginalSheetMode()) return;
+  if (sortState.key !== key) {
+    sortState = { key, dir: "asc" };
+  } else {
+    sortState.dir = sortState.dir === "asc" ? "desc" : "asc";
+  }
+  applySort();
+  renderTableHead(); // met à jour les icônes
+  renderTableBody();
+}
+
+function renderStats() {
+  const total = rawRows.length;
+  const shown = viewRows.length;
+
+  if (isSessionRows()) {
+    const sessions = new Set(viewRows.map(r => String(r.session_numero ?? "").trim())).size;
+    const participations = viewRows.length;
+    const joueurs = new Set(viewRows.map(r => String(r.joueur_id ?? "").trim()).filter(Boolean)).size;
+    const argentTotal = viewRows.reduce((acc, r) => acc + (Number(r.gain ?? 0) || 0), 0);
+    const totalMises = viewRows.reduce((acc, r) => acc + (Number(r.mise ?? 0) || 0), 0);
+    const miseMoyenne = participations ? (totalMises / participations) : 0;
+    const gainsMoyensParSession = sessions ? (argentTotal / sessions) : 0;
+    const misesMoyennesParSession = sessions ? (totalMises / sessions) : 0;
+    const misesMoyennesParSessionParJoueur = joueurs ? (misesMoyennesParSession / joueurs) : 0;
+
+    const cards = [
+      { k: "Nombre de sessions", v: sessions },
+      { k: "Nombre de participations", v: participations },
+      { k: "Argent total dépensé", v: `${formatAmount(argentTotal)} €` },
+      { k: "Mise moyenne au total", v: `${formatAmount(miseMoyenne)} €` },
+      { k: "Gains moyens par session", v: `${formatAmount(gainsMoyensParSession)} €` },
+      { k: "Mises moyennes par session par joueur", v: `${formatAmount(misesMoyennesParSessionParJoueur)} €` }
+    ];
+
+    els.statsCards.innerHTML = cards.map(c => `
+      <div class="card">
+        <div class="card__k">${escapeHTML(c.k)}</div>
+        <div class="card__v">${escapeHTML(String(c.v))}</div>
+      </div>
+    `).join("");
+
+    document.getElementById("rowCount").textContent = `${shown} lignes`;
+    document.getElementById("colCount").textContent = `${headers.length} colonnes`;
+    return;
+  }
+
+  const board = computeLeaderboard(viewRows);
+  const positives = board.items.filter(x => x.amount > 0).length;
+  const negatives = board.items.filter(x => x.amount < 0).length;
+  const totalNet = board.items.reduce((acc, x) => acc + x.amount, 0);
+
+  const cards = [
+    { k: "Lignes (total)", v: total },
+    { k: "Lignes (affichées)", v: shown },
+    { k: "Colonnes", v: headers.length },
+    { k: "Tri", v: sortState.key ? `${sortState.key} (${sortState.dir})` : "—" }
+  ];
+
+  if (board.items.length) {
+    cards.push({ k: "Joueurs gagnants", v: positives });
+    cards.push({ k: "Joueurs perdants", v: negatives });
+    cards.push({ k: "Bénéfice net (filtre)", v: `${formatAmount(totalNet)} €` });
+  }
+
+  els.statsCards.innerHTML = cards.map(c => `
+    <div class="card">
+      <div class="card__k">${escapeHTML(c.k)}</div>
+      <div class="card__v">${escapeHTML(String(c.v))}</div>
+    </div>
+  `).join("");
+
+  document.getElementById("rowCount").textContent = `${shown} lignes`;
+  document.getElementById("colCount").textContent = `${headers.length} colonnes`;
+}
+
+function renderLeaderboard() {
+  if (isSpreadsheetMode()) {
+    els.leaderboardMeta.textContent = "Tableau brut";
+    els.leaderboard.innerHTML = `<div class="muted">Affichage type feuille active.</div>`;
+    return;
+  }
+
+  if (isSessionRows()) {
+    renderSessionSummaryTable();
+    return;
+  }
+
+  const board = computeLeaderboard(viewRows);
+
+  if (!board.playerCol || !board.moneyCol) {
+    els.leaderboardMeta.textContent = "Colonnes Joueur/Benefice non detectees";
+    els.leaderboard.innerHTML = `
+      <div class="muted">Ajoute une colonne joueur et une colonne de resultat net pour afficher le classement.</div>
+    `;
+    return;
+  }
+
+  if (!board.items.length) {
+    els.leaderboardMeta.textContent = "Aucune donnee exploitable";
+    els.leaderboard.innerHTML = `<div class="muted">Aucun resultat numerique trouve.</div>`;
+    return;
+  }
+
+  const maxAbs = Math.max(...board.items.map(x => Math.abs(x.amount)), 1);
+  const leader = board.items[0];
+  els.leaderboardMeta.textContent = `Leader: ${leader.name} (${formatAmount(leader.amount)} €)`;
+
+  els.leaderboard.innerHTML = board.items.map((item, idx) => {
+    const kind = item.amount >= 0 ? "pos" : "neg";
+    const width = Math.max(6, (Math.abs(item.amount) / maxAbs) * 100);
+    return `
+      <div class="leaderRow">
+        <div class="leaderRow__head">
+          <span class="leaderName">#${idx + 1} ${escapeHTML(item.name)}</span>
+          <span class="leaderVal ${kind}">${escapeHTML(formatAmount(item.amount))} €</span>
+        </div>
+        <div class="leaderTrack">
+          <div class="leaderFill ${kind}" style="width:${width}%"></div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function isSessionRows() {
+  const needed = ["session_numero", "session_nom", "joueur", "position", "mise", "gain"];
+  return needed.every(k => headers.includes(k));
+}
+
+function renderSessionSummaryTable() {
+  const sessionNameById = {};
+  for (const row of viewRows) {
+    const sid = String(row.session_numero ?? "").trim();
+    const sname = String(row.session_nom ?? "").trim();
+    if (sid && sname && !sessionNameById[sid]) sessionNameById[sid] = sname;
+  }
+
+  const sessionIds = [...new Set(viewRows.map(r => String(r.session_numero ?? "").trim()).filter(Boolean))]
+    .sort((a, b) => Number(a) - Number(b));
+  const playerMap = new Map();
+
+  for (const row of viewRows) {
+    const playerId = String(row.joueur_id ?? "").trim();
+    const playerName = String(row.joueur ?? "").trim() || playerId;
+    const sid = String(row.session_numero ?? "").trim();
+    const pos = Number(row.position ?? "");
+    const mise = Number(row.mise ?? "");
+    const gain = Number(row.gain ?? "");
+
+    const key = playerId || playerName;
+    if (!playerMap.has(key)) {
+      playerMap.set(key, {
+        player: playerName,
+        participations: 0,
+        sessionPos: {},
+        sumPos: 0,
+        countPos: 0,
+        wins: 0,
+        second: 0,
+        third: 0,
+        top3: 0,
+        gains: 0,
+        mises: 0
+      });
+    }
+
+    const p = playerMap.get(key);
+    if (Number.isFinite(pos) && pos > 0) {
+      p.participations += 1;
+      p.sessionPos[sid] = pos;
+      p.sumPos += pos;
+      p.countPos += 1;
+      if (pos === 1) p.wins += 1;
+      if (pos === 2) p.second += 1;
+      if (pos === 3) p.third += 1;
+      if (pos <= 3) p.top3 += 1;
+    }
+    if (Number.isFinite(gain)) p.gains += gain;
+    if (Number.isFinite(mise)) p.mises += mise;
+  }
+
+  let players = [...playerMap.values()]
+    .map(p => ({
+      ...p,
+      avgPos: p.countPos ? p.sumPos / p.countPos : null,
+      avgMise: p.participations ? p.mises / p.participations : 0,
+      net: p.gains - p.mises
+    }));
+
+  players.sort((a, b) => compareSummaryPlayers(a, b));
+
+  els.leaderboardMeta.textContent = `${players.length} joueurs`;
+  if (!players.length) {
+    els.leaderboard.innerHTML = `<div class="muted">Aucune session à afficher.</div>`;
+    return;
+  }
+
+  const totals = {
+    participations: players.reduce((a, p) => a + p.participations, 0),
+    wins: players.reduce((a, p) => a + p.wins, 0),
+    second: players.reduce((a, p) => a + p.second, 0),
+    third: players.reduce((a, p) => a + p.third, 0),
+    top3: players.reduce((a, p) => a + p.top3, 0),
+    gains: players.reduce((a, p) => a + p.gains, 0),
+    mises: players.reduce((a, p) => a + p.mises, 0)
+  };
+  totals.avgMise = totals.participations ? (totals.mises / totals.participations) : 0;
+  totals.net = totals.gains - totals.mises;
+
+  const sessionCounts = Object.fromEntries(sessionIds.map(sid => [sid, 0]));
+  for (const row of viewRows) {
+    const sid = String(row.session_numero ?? "").trim();
+    if (sid && Object.prototype.hasOwnProperty.call(sessionCounts, sid)) sessionCounts[sid] += 1;
+  }
+
+  const moneyClass = n => n > 0 ? "moneyPos" : (n < 0 ? "moneyNeg" : "");
+  const fmtInt = n => String(Math.round(n));
+  const fmtEuro = n => `${fmtInt(n)} €`;
+  const fmtAvg = n => (n == null ? "-" : n.toFixed(1).replace(".", ","));
+  const maxPart = Math.max(...players.map(p => p.participations), 1);
+
+  const posClass = (v) => {
+    if (!Number.isFinite(v) || v <= 0) return "posMissing";
+    if (v === 1) return "pos1";
+    if (v === 2) return "pos2";
+    if (v === 3) return "pos3";
+    if (v <= 5) return "posMid";
+    return "posLow";
+  };
+  const avgPosClass = (v) => {
+    if (v == null) return "avgMissing";
+    if (v <= 3) return "avgGood";
+    if (v <= 5) return "avgMid";
+    return "avgBad";
+  };
+  const metricClass = (v) => Number(v) > 0 ? "metricGood" : "metricZero";
+  const partClass = (v) => {
+    const ratio = Number(v) / maxPart;
+    if (ratio >= 0.85) return "partHigh";
+    if (ratio >= 0.55) return "partMid";
+    return "partLow";
+  };
+
+  const sessionTablesHTML = renderSessionTablesHTML();
+
+  els.leaderboard.innerHTML = `
+    <div class="megaWrap">
+      <table class="megaTable">
+        <thead>
+          <tr>
+            <th rowspan="2" data-sort-key="player">Joueurs</th>
+            <th rowspan="2" data-sort-key="participations">Nombre de Participations</th>
+            <th colspan="${sessionIds.length}">Positions</th>
+            <th rowspan="2" data-sort-key="avgPos">Position Moyenne</th>
+            <th rowspan="2" data-sort-key="wins">Victoire</th>
+            <th rowspan="2" data-sort-key="second">Seconde place</th>
+            <th rowspan="2" data-sort-key="third">Troisième place</th>
+            <th rowspan="2" data-sort-key="top3">Top 3</th>
+            <th rowspan="2" data-sort-key="gains">Gains</th>
+            <th rowspan="2" data-sort-key="mises">Mises</th>
+            <th rowspan="2" data-sort-key="avgMise">Mises Moyennes</th>
+            <th rowspan="2" data-sort-key="net">Bénéfice Net</th>
+          </tr>
+          <tr>
+            ${sessionIds.map((sid) => {
+              const label = sessionNameById[sid] || `Poker ${sid}`;
+              return `<th data-sort-key="sessionPos" data-session-id="${escapeAttr(sid)}">${escapeHTML(label)}</th>`;
+            }).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${players.map(p => `
+            <tr>
+              <td>${escapeHTML(p.player)}</td>
+              <td class="${partClass(p.participations)}">${p.participations}</td>
+              ${sessionIds.map(sid => {
+                const v = Number(p.sessionPos[sid] ?? NaN);
+                const text = Number.isFinite(v) ? String(v) : "-";
+                return `<td class="${posClass(v)}">${text}</td>`;
+              }).join("")}
+              <td class="${avgPosClass(p.avgPos)}">${fmtAvg(p.avgPos)}</td>
+              <td class="${metricClass(p.wins)}">${p.wins}</td>
+              <td class="${metricClass(p.second)}">${p.second}</td>
+              <td class="${metricClass(p.third)}">${p.third}</td>
+              <td class="${metricClass(p.top3)}">${p.top3}</td>
+              <td class="moneyCol">${fmtEuro(p.gains)}</td>
+              <td class="moneyCol">${fmtEuro(p.mises)}</td>
+              <td class="moneyCol">${fmtEuro(p.avgMise)}</td>
+              <td class="${moneyClass(p.net)}">${fmtEuro(p.net)}</td>
+            </tr>
+          `).join("")}
+          <tr class="megaTotal">
+            <td>Total</td>
+            <td>${totals.participations}</td>
+            ${sessionIds.map(sid => `<td>${sessionCounts[sid] || 0}</td>`).join("")}
+            <td>-</td>
+            <td>${totals.wins}</td>
+            <td>${totals.second}</td>
+            <td>${totals.third}</td>
+            <td>${totals.top3}</td>
+            <td>${fmtEuro(totals.gains)}</td>
+            <td>${fmtEuro(totals.mises)}</td>
+            <td>${fmtEuro(totals.avgMise)}</td>
+            <td class="${moneyClass(totals.net)}">${fmtEuro(totals.net)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    ${sessionTablesHTML}
+  `;
+
+  const table = els.leaderboard.querySelector(".megaTable");
+  table?.querySelectorAll("th[data-sort-key]").forEach(th => {
+    th.addEventListener("click", () => {
+      const key = th.dataset.sortKey || "";
+      const sessionId = th.dataset.sessionId || "";
+      if (summarySortState.key === key && summarySortState.sessionId === sessionId) {
+        summarySortState.dir = summarySortState.dir === "asc" ? "desc" : "asc";
+      } else {
+        summarySortState = { key, dir: "asc", sessionId };
+      }
+      renderSessionSummaryTable();
+    });
+  });
+
+  els.leaderboard.querySelectorAll(".sessionDeleteBtn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await deleteSessionById(btn.dataset.sessionId || "");
+      } catch (err) {
+        console.error(err);
+        setStatus("Suppression impossible", "bad");
+      }
+    });
+  });
+}
+
+function compareSummaryPlayers(a, b) {
+  const mul = summarySortState.dir === "asc" ? 1 : -1;
+  const { key, sessionId } = summarySortState;
+
+  const va = getSummarySortValue(a, key, sessionId);
+  const vb = getSummarySortValue(b, key, sessionId);
+
+  const aNum = typeof va === "number";
+  const bNum = typeof vb === "number";
+  if (aNum && bNum) return (va - vb) * mul;
+  return String(va).localeCompare(String(vb), "fr", { sensitivity: "base", numeric: true }) * mul;
+}
+
+function getSummarySortValue(p, key, sessionId) {
+  if (key === "sessionPos") return Number(p.sessionPos[sessionId] ?? 999);
+  if (key === "avgPos") return p.avgPos == null ? 999 : p.avgPos;
+  if (key === "player") return p.player;
+  return p[key];
+}
+
+function renderSessionTablesHTML() {
+  const bySession = new Map();
+  for (const row of viewRows) {
+    const id = String(row.session_numero ?? "").trim();
+    const fallbackName = id ? `Session ${id}` : "Session";
+    const name = String(row.session_nom ?? fallbackName);
+    const key = `${id}::${name}`;
+    if (!bySession.has(key)) bySession.set(key, { id, name, rows: [] });
+    bySession.get(key).rows.push(row);
+  }
+
+  const sessions = [...bySession.values()].sort((a, b) => Number(a.id) - Number(b.id));
+  if (!sessions.length) return "";
+
+  return `
+    <div class="sessionTables">
+      ${sessions.map(s => {
+        const rows = [...s.rows].sort((a, b) => Number(a.position) - Number(b.position));
+        return `
+          <section class="sessionCard">
+            <div class="sessionCard__title" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+              <span>${escapeHTML(s.name)}</span>
+              <span style="display:flex;gap:8px;">
+                <a class="btn btnLink" href="./add-session.html?editSessionId=${escapeAttr(s.id)}">Modifier</a>
+                <button class="btn sessionDeleteBtn" type="button" data-session-id="${escapeAttr(s.id)}">Supprimer</button>
+              </span>
+            </div>
+            <div class="sessionCard__wrap">
+              <table class="sessionCard__table">
+                <thead>
+                  <tr>
+                    <th>Position</th>
+                    <th>Joueurs</th>
+                    <th>Mises</th>
+                    <th>Gains</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rows.map(r => {
+                    const pos = String(r.position ?? "");
+                    const posClass = pos === "1" ? "posGold" : (pos === "2" ? "posSilver" : (pos === "3" ? "posBronze" : ""));
+                    return `
+                      <tr class="${posClass}">
+                        <td>${escapeHTML(pos)}</td>
+                        <td>${escapeHTML(String(r.joueur ?? ""))}</td>
+                        <td>${escapeHTML(String(r.mise ?? ""))} €</td>
+                        <td>${escapeHTML(String(r.gain ?? ""))} €</td>
+                      </tr>
+                    `;
+                  }).join("")}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderTableHead() {
+  if (isOriginalSheetMode()) {
+    const first = sheetLayout.rows[0];
+    els.thead.innerHTML = `<tr>${first.cells.map(renderSheetCell).join("")}</tr>`;
+    return;
+  }
+
+  const { key, dir } = sortState;
+  const spreadsheet = isSpreadsheetMode();
+
+  els.thead.innerHTML = `
+    <tr>
+      ${spreadsheet ? `<th class="rowNumHead"></th>` : ""}
+      ${headers.map((h, idx) => {
+        const active = key === h;
+        const icon = !active ? "⇅" : (dir === "asc" ? "↑" : "↓");
+        const label = displayHeaderName(h, idx);
+        return `<th ${spreadsheet ? "" : `data-key="${escapeAttr(h)}"`}>
+          <span class="sortHint">${escapeHTML(label)} ${spreadsheet ? "" : `<span class="sortIcon">${icon}</span>`}</span>
+        </th>`;
+      }).join("")}
+    </tr>
+  `;
+
+  if (spreadsheet) return;
+  els.thead.querySelectorAll("th").forEach(th => {
+    th.addEventListener("click", () => toggleSort(th.dataset.key));
+  });
+}
+
+function renderTableBody() {
+  if (isOriginalSheetMode()) {
+    const rows = sheetLayout.rows.slice(1);
+    els.tbody.innerHTML = rows.map(r => `<tr>${r.cells.map(renderSheetCell).join("")}</tr>`).join("");
+    return;
+  }
+
+  const maxRows = 2000;
+  const sliced = viewRows.slice(0, maxRows);
+  const spreadsheet = isSpreadsheetMode();
+
+  els.tbody.innerHTML = sliced.map((row, rowIdx) => {
+    const rowNumber = rowIdx + 1;
+    return `
+      <tr>
+        ${spreadsheet ? `<td class="rowNumCell">${rowNumber}</td>` : ""}
+        ${headers.map(h => `<td>${escapeHTML(row[h] ?? "")}</td>`).join("")}
+      </tr>
+    `;
+  }).join("");
+
+  if (viewRows.length > maxRows) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = headers.length + (spreadsheet ? 1 : 0);
+    td.textContent = `Affichage limité à ${maxRows} lignes (sur ${viewRows.length}).`;
+    tr.appendChild(td);
+    els.tbody.appendChild(tr);
+  }
+}
+
+function renderSheetCell(cell) {
+  const tag = cell.tag === "th" ? "th" : "td";
+  const attrs = [];
+  if (cell.className) attrs.push(`class="${escapeAttr(cell.className)}"`);
+  if (cell.id) attrs.push(`id="${escapeAttr(cell.id)}"`);
+  if (cell.colspan && cell.colspan > 1) attrs.push(`colspan="${cell.colspan}"`);
+  if (cell.rowspan && cell.rowspan > 1) attrs.push(`rowspan="${cell.rowspan}"`);
+  const text = escapeHTML(cell.text ?? "").replace(/\n/g, "<br>");
+  return `<${tag} ${attrs.join(" ")}>${text}</${tag}>`;
+}
+
+function render() {
+  const sessionMode = isSessionRows();
+  els.dataPanel?.classList.add("isHidden");
+  document.body.classList.toggle("sessionMode", sessionMode);
+
+  renderStats();
+  renderLeaderboard();
+}
+
+function buildColumnSelect() {
+  if (!els.columnSelect) return;
+  els.columnSelect.innerHTML = `
+    <option value="">(Toutes)</option>
+    ${headers.map((h, idx) => `<option value="${escapeAttr(h)}">${escapeHTML(displayHeaderName(h, idx))}</option>`).join("")}
+  `;
+}
+
+async function apiFetch(path, options = {}) {
+  let lastError = null;
+  for (const base of API_BASES) {
+    try {
+      const res = await fetch(`${base}${path}`, {
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        ...options
+      });
+      if (!res.ok) {
+        let detail = "";
+        try {
+          const body = await res.json();
+          detail = body?.detail || body?.message || "";
+        } catch {
+          // ignore parse errors
+        }
+        lastError = new Error(`API ${res.status}${detail ? `: ${detail}` : ""}`);
+        continue;
+      }
+      const text = await res.text();
+      return text ? JSON.parse(text) : null;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error("API unreachable");
+}
+
+async function fetchSessionRowsFromApi() {
+  const [players, sessions, entries, buyins, payouts] = await Promise.all([
+    apiFetch("/api/players"),
+    apiFetch("/api/sessions"),
+    apiFetch("/api/entries"),
+    apiFetch("/api/buyins"),
+    apiFetch("/api/payouts")
+  ]);
+
+  const playerNameById = Object.fromEntries(
+    (players || []).map((p) => [String(p.player_id), String(p.player_name || "").trim()])
+  );
+  const sessionById = Object.fromEntries(
+    (sessions || []).map((s) => [String(s.session_id), s])
+  );
+
+  const buyinTotals = new Map();
+  for (const b of (buyins || [])) {
+    const key = `${b.session_id}|${b.player_id}`;
+    buyinTotals.set(key, (buyinTotals.get(key) || 0) + Number(b.amount || 0));
+  }
+
+  const payoutTotals = new Map();
+  for (const p of (payouts || [])) {
+    const key = `${p.session_id}|${p.player_id}`;
+    payoutTotals.set(key, Number(p.amount || 0));
+  }
+
+  const rows = (entries || []).map((e) => {
+    const sid = String(e.session_id);
+    const pid = String(e.player_id);
+    const key = `${sid}|${pid}`;
+    const buyin = Number(buyinTotals.get(key) || 0);
+    const gain = Number(payoutTotals.get(key) || 0);
+    const session = sessionById[sid];
+    return {
+      session_numero: sid,
+      session_nom: String(session?.session_name || `Session ${sid}`),
+      joueur_id: pid,
+      joueur: String(e.player_name || playerNameById[pid] || pid),
+      position_id: String(e.position_id ?? ""),
+      position: String(e.rank_no ?? ""),
+      mise_id: String(buyin / 10 || ""),
+      mise: String(buyin),
+      gain: String(gain)
+    };
+  });
+
+  rows.sort((a, b) => {
+    const s = Number(a.session_numero) - Number(b.session_numero);
+    if (s !== 0) return s;
+    return Number(a.position) - Number(b.position);
+  });
+
+  return {
+    headers: ["session_numero", "session_nom", "joueur_id", "joueur", "position_id", "position", "mise_id", "mise", "gain"],
+    rows
+  };
+}
+
+async function deleteSessionById(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return;
+  if (!window.confirm(`Supprimer la session ${sid} ?`)) return;
+  await apiFetch(`/api/sessions/${encodeURIComponent(sid)}`, { method: "DELETE" });
+  if (els.sessionSelect && String(els.sessionSelect.value || "") === sid) {
+    els.sessionSelect.value = "";
+  }
+  await loadData();
+}
+
+async function loadData(forceDatasetId = null) {
+  setStatus("Chargement…", "warn");
+  try {
+    if (forceDatasetId) activeDatasetId = forceDatasetId;
+    activeDatasetId = "sessions";
+    importedDatasetName = "";
+    sheetLayout = null;
+
+    const obj = await fetchSessionRowsFromApi();
+    const source = "API";
+
+    headers = obj.headers;
+    rawRows = obj.rows;
+    if (!headers.length) throw new Error("Dataset vide depuis API");
+
+    sortState = { key: headers[0] ?? null, dir: "asc" };
+
+    buildColumnSelect();
+    buildSessionSelect();
+    els.table.classList.toggle("sheetMode", Boolean(isOriginalSheetMode()));
+    renderTableHead();
+
+    viewRows = [...rawRows];
+    applySort();
+    render();
+
+    setStatus(`Charge (${source})`, "ok");
+  } catch (e) {
+    console.error(e);
+    setStatus("Erreur de chargement API", "bad");
+    els.statsCards.innerHTML = `
+      <div class="card">
+        <div class="card__k">Problème</div>
+        <div class="card__v" style="font-size:14px;font-weight:600;">
+          Impossible de charger les donnees depuis l'API backend.
+          <div style="margin-top:8px;font-size:12px;opacity:.85;">${escapeHTML(String(e?.message || ""))}</div>
+        </div>
+      </div>
+    `;
+    els.thead.innerHTML = "";
+    els.tbody.innerHTML = "";
+    els.sessionField?.classList.add("isHidden");
+    els.table.classList.remove("sheetMode");
+    document.getElementById("rowCount").textContent = "0 lignes";
+    document.getElementById("colCount").textContent = "0 colonnes";
+  }
+}
+
+function ensureSheetStyles(styleMap) {
+  const styleId = "sheetStyleMap";
+  let styleEl = document.getElementById(styleId);
+  if (!styleEl) {
+    styleEl = document.createElement("style");
+    styleEl.id = styleId;
+    document.head.appendChild(styleEl);
+  }
+  const rules = Object.entries(styleMap || {}).map(([cls, css]) => (
+    `#dataTable.sheetMode .${cls}{${css}}`
+  ));
+  styleEl.textContent = rules.join("\n");
+}
+
+function exportCurrentDataset() {
+  if (!headers.length) return;
+  const payload = {
+    columns: headers,
+    rows: rawRows
+  };
+  const stamp = new Date().toISOString().slice(0, 10);
+  const base = importedDatasetName || activeDatasetId || "dataset";
+  const fileName = `${base}-${stamp}.json`;
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function datasetFromJson(json) {
+  if (Array.isArray(json?.session)) {
+    const jsonRows = json.session;
+    const jsonHeaders = jsonRows.length ? Object.keys(jsonRows[0]) : [];
+    return {
+      headers: jsonHeaders,
+      rows: jsonRows.map((row) => {
+        const clean = {};
+        jsonHeaders.forEach((h) => { clean[h] = String(row[h] ?? "").trim(); });
+        return clean;
+      })
+    };
+  }
+
+  if (Array.isArray(json)) {
+    const jsonRows = json;
+    const jsonHeaders = jsonRows.length ? Object.keys(jsonRows[0]) : [];
+    return {
+      headers: jsonHeaders,
+      rows: jsonRows.map((row) => {
+        const clean = {};
+        jsonHeaders.forEach((h) => { clean[h] = String(row[h] ?? "").trim(); });
+        return clean;
+      })
+    };
+  }
+
+  const jsonRows = Array.isArray(json?.rows) ? json.rows : [];
+  const jsonHeaders = jsonRows.length
+    ? Object.keys(jsonRows[0])
+    : (Array.isArray(json?.columns) ? json.columns : []);
+
+  return {
+    headers: jsonHeaders,
+    rows: jsonRows.map((row) => {
+      const clean = {};
+      jsonHeaders.forEach((h) => { clean[h] = String(row[h] ?? "").trim(); });
+      return clean;
+    })
+  };
+}
+
+async function importDatasetFromFile(file) {
+  const text = await file.text();
+  const json = JSON.parse(text);
+  const obj = await datasetFromJson(json);
+  if (!obj.headers.length) throw new Error("Fichier JSON sans données exploitables");
+
+  importedDatasetName = String(file.name || "import")
+    .replace(/\.json$/i, "")
+    .replace(/[^\w.-]+/g, "_");
+  activeDatasetId = "";
+  sheetLayout = null;
+  headers = obj.headers;
+  rawRows = obj.rows;
+  sortState = { key: headers[0] ?? null, dir: "asc" };
+
+  buildColumnSelect();
+  els.table.classList.remove("sheetMode");
+  renderTableHead();
+
+  viewRows = [...rawRows];
+  applySort();
+  render();
+  setStatus(`Importé (${file.name})`, "ok");
+}
+
+if (els.searchInput) els.searchInput.addEventListener("input", applyFilters);
+if (els.sessionSelect) els.sessionSelect.addEventListener("change", applyFilters);
+if (els.datasetSelect) {
+  els.datasetSelect.addEventListener("change", () => {
+    loadData(els.datasetSelect.value);
+  });
+}
+if (els.columnSelect) els.columnSelect.addEventListener("change", applyFilters);
+if (els.columnFilterInput) els.columnFilterInput.addEventListener("input", applyFilters);
+if (els.refreshBtn) els.refreshBtn.addEventListener("click", loadData);
+if (els.importBtn && els.importInput) {
+  els.importBtn.addEventListener("click", () => els.importInput.click());
+}
+if (els.exportBtn) els.exportBtn.addEventListener("click", exportCurrentDataset);
+if (els.importInput) {
+  els.importInput.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      await importDatasetFromFile(file);
+    } catch (err) {
+      console.error(err);
+      setStatus("Import JSON invalide", "bad");
+    } finally {
+      e.target.value = "";
+    }
+  });
+}
+
+loadData();

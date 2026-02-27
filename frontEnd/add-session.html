@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ajouter Une Session</title>
+  <link rel="icon" type="image/png" href="./img/Poker.png" />
+  <link rel="stylesheet" href="./css/home.css" />
+</head>
+<body>
+  <main class="container">
+    <section class="panel">
+      <div class="panel__head">
+        <h2>Ajouter une session</h2>
+        <a class="btn btnLink" href="./home.html">Retour</a>
+      </div>
+      <div style="padding:14px;">
+        <form id="sessionForm" class="controls" style="grid-template-columns:1fr 1fr 1fr auto;">
+          <label class="field">
+            <span>ID session</span>
+            <input id="sessionId" type="text" required />
+          </label>
+          <label class="field">
+            <span>Nom session</span>
+            <input id="sessionName" type="text" required placeholder="Ex: Poker 9" />
+          </label>
+          <label class="field">
+            <span>Nombre de participants</span>
+            <input id="participantCount" type="number" min="1" step="1" value="8" />
+          </label>
+          <button id="applyCountBtn" class="btn" type="button">Appliquer</button>
+        </form>
+
+        <div class="panel" style="margin-top:14px;">
+          <div class="panel__head">
+            <h2>Participants</h2>
+            <div style="display:flex;gap:10px;">
+              <button id="openNewParticipantBtn" class="btn" type="button">Nouveau participant</button>
+              <button id="addRowBtn" class="btn" type="button">Ajouter une ligne</button>
+            </div>
+          </div>
+          <div class="tableWrap">
+            <table id="participantsTable">
+              <thead>
+                <tr>
+                  <th>Joueur existant</th>
+                  <th>Position</th>
+                  <th>Mise</th>
+                  <th>Gain (auto)</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div id="sessionTotalsInfo" class="muted" style="padding:10px 14px;border-top:1px solid var(--line);">
+            Total mises: 0 € | Total gains: 0 €
+          </div>
+        </div>
+
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+          <button id="openGainsModalBtn" class="btn" type="button">Valider les gains</button>
+          <button id="saveBtn" class="btn" type="button">Enregistrer la session</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="newParticipantModal" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:9999;">
+    <div class="panel" style="width:min(560px,92vw);">
+      <div class="panel__head">
+        <h2>Nouveau participant</h2>
+      </div>
+      <div style="padding:14px;display:flex;flex-direction:column;gap:10px;">
+        <label class="field">
+          <span>Nom du participant</span>
+          <input id="newParticipantInput" type="text" placeholder="Ex: Alex" />
+        </label>
+        <div style="display:flex;justify-content:flex-end;gap:10px;">
+          <button id="cancelNewParticipantBtn" class="btn" type="button">Annuler</button>
+          <button id="confirmNewParticipantBtn" class="btn" type="button">Ajouter</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="gainsModal" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:9999;">
+    <div class="panel" style="width:min(560px,92vw);">
+      <div class="panel__head">
+        <h2>Répartition des gains</h2>
+      </div>
+      <div style="padding:14px;display:flex;flex-direction:column;gap:10px;">
+        <div id="gainsPoolInfo" class="muted">Il y a 0 €</div>
+        <div id="gainsDistributedInfo" class="muted">Total gains partages: 0 €</div>
+        <label class="field">
+          <span>Gain 1er</span>
+          <select id="gainFirstInput"></select>
+        </label>
+        <label class="field">
+          <span>Gain 2e</span>
+          <select id="gainSecondInput"></select>
+        </label>
+        <label class="field">
+          <span>Gain 3e</span>
+          <select id="gainThirdInput"></select>
+        </label>
+        <div style="display:flex;justify-content:flex-end;gap:10px;">
+          <button id="cancelGainsModalBtn" class="btn" type="button">Annuler</button>
+          <button id="confirmGainsModalBtn" class="btn" type="button">Valider</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./scripts/add-session.js"></script>
+</body>
+</html>

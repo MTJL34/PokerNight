@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Projet Google Sheet → Web</title>
+  <link rel="icon" type="image/png" href="./img/Poker.png" />
+  <link rel="stylesheet" href="./css/home.css" />
+</head>
+<body>
+  <header class="container">
+    <div class="top">
+      <span class="badge" id="statusBadge">Hors ligne</span>
+    </div>
+
+    <div class="controls">
+      <label class="field" id="sessionField">
+        <span>Session</span>
+        <select id="sessionSelect"></select>
+      </label>
+
+      <button id="refreshBtn" class="btn">Rafraîchir</button>
+      <a id="addSessionBtn" class="btn btnLink" href="./add-session.html">Ajouter une session</a>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="cards" id="statsCards"></section>
+
+    <section class="panel">
+      <div class="panel__head">
+        <h2>Classement joueurs</h2>
+        <div class="panel__meta">
+          <span id="leaderboardMeta">En attente de donnees</span>
+        </div>
+      </div>
+      <div id="leaderboard" class="leaderboard"></div>
+    </section>
+
+    <section class="panel" id="dataPanel">
+      <div class="panel__head">
+        <h2>Données</h2>
+        <div class="panel__meta">
+          <span id="rowCount">0 lignes</span>
+          <span>•</span>
+          <span id="colCount">0 colonnes</span>
+        </div>
+      </div>
+
+      <div class="tableWrap">
+        <table id="dataTable" aria-label="Table des données">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="./scripts/home.js"></script>
+</body>
+</html>

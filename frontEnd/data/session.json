@@ -1,0 +1,490 @@
+{
+  "session": [
+    {
+      "id": "1",
+      "name": "Poker 1",
+      "participants": [
+        {
+          "joueur_id": "2",
+          "position_id": "1",
+          "mise_id": "1",
+          "gain": 120
+        },
+        {
+          "joueur_id": "8",
+          "position_id": "2",
+          "mise_id": "2",
+          "gain": 50
+        },
+        {
+          "joueur_id": "5",
+          "position_id": "3",
+          "mise_id": "3",
+          "gain": 20
+        },
+        {
+          "joueur_id": "16",
+          "position_id": "4",
+          "mise_id": "2",
+          "gain": 0
+        },
+        {
+          "joueur_id": "4",
+          "position_id": "5",
+          "mise_id": "3",
+          "gain": 0
+        },
+        {
+          "joueur_id": "1",
+          "position_id": "6",
+          "mise_id": "2",
+          "gain": 0
+        },
+        {
+          "joueur_id": "3",
+          "position_id": "7",
+          "mise_id": "3",
+          "gain": 0
+        },
+        {
+          "joueur_id": "12",
+          "position_id": "8",
+          "mise_id": "3",
+          "gain": 0
+        }
+      ]
+    },
+    {
+      "id": "2",
+      "name": "Poker 2",
+      "participants": [
+        {
+          "joueur_id": "5",
+          "position_id": "1",
+          "mise_id": "3",
+          "gain": 100
+        },
+        {
+          "joueur_id": "2",
+          "position_id": "2",
+          "mise_id": "1",
+          "gain": 50
+        },
+        {
+          "joueur_id": "8",
+          "position_id": "3",
+          "mise_id": "3",
+          "gain": 20
+        },
+        {
+          "joueur_id": "6",
+          "position_id": "4",
+          "mise_id": "2",
+          "gain": 0
+        },
+        {
+          "joueur_id": "11",
+          "position_id": "5",
+          "mise_id": "3",
+          "gain": 0
+        },
+        {
+          "joueur_id": "3",
+          "position_id": "6",
+          "mise_id": "1",
+          "gain": 0
+        },
+        {
+          "joueur_id": "4",
+          "position_id": "7",
+          "mise_id": "1",
+          "gain": 0
+        },
+        {
+          "joueur_id": "1",
+          "position_id": "8",
+          "mise_id": "2",
+          "gain": 0
+        },
+        {
+          "joueur_id": "12",
+          "position_id": "9",
+          "mise_id": "1",
+          "gain": 0
+        }
+      ]
+    },
+    {
+      "id": "3",
+      "name": "Poker 3",
+      "participants": [
+        {
+          "joueur_id": "1",
+          "position_id": "1",
+          "mise_id": "3",
+          "gain": 130
+        },
+        {
+          "joueur_id": "6",
+          "position_id": "2",
+          "mise_id": "3",
+          "gain": 60
+        },
+        {
+          "joueur_id": "4",
+          "position_id": "3",
+          "mise_id": "1",
+          "gain": 20
+        },
+        {
+          "joueur_id": "3",
+          "position_id": "4",
+          "mise_id": "2",
+          "gain": 0
+        },
+        {
+          "joueur_id": "13",
+          "position_id": "5",
+          "mise_id": "3",
+          "gain": 0
+        },
+        {
+          "joueur_id": "7",
+          "position_id": "6",
+          "mise_id": "2",
+          "gain": 0
+        },
+        {
+          "joueur_id": "2",
+          "position_id": "7",
+          "mise_id": "1",
+          "gain": 0
+        },
+        {
+          "joueur_id": "10",
+          "position_id": "8",
+          "mise_id": "3",
+          "gain": 0
+        },
+        {
+          "joueur_id": "5",
+          "position_id": "9",
+          "mise_id": "3",
+          "gain": 0
+        }
+      ]
+    },
+    {
+      "id": "4",
+      "name": "Poker 4",
+      "participants": [
+        {
+          "joueur_id": "6",
+          "position_id": "1",
+          "mise_id": "2",
+          "gain": 90
+        },
+        {
+          "joueur_id": "11",
+          "position_id": "2",
+          "mise_id": "1",
+          "gain": 40
+        },
+        {
+          "joueur_id": "3",
+          "position_id": "3",
+          "mise_id": "2",
+          "gain": 20
+        },
+        {
+          "joueur_id": "2",
+          "position_id": "4",
+          "mise_id": "2",
+          "gain": 0
+        },
+        {
+          "joueur_id": "8",
+          "position_id": "5",
+          "mise_id": "2",
+          "gain": 0
+        },
+        {
+          "joueur_id": "1",
+          "position_id": "6",
+          "mise_id": "3",
+          "gain": 0
+        },
+        {
+          "joueur_id": "10",
+          "position_id": "7",
+          "mise_id": "3",
+          "gain": 0
+        }
+      ]
+    },
+    {
+      "id": "5",
+      "name": "Poker 5",
+      "participants": [
+        {
+          "joueur_id": "1",
+          "position_id": "1",
+          "mise_id": "3",
+          "gain": 100
+        },
+        {
+          "joueur_id": "3",
+          "position_id": "2",
+          "mise_id": "3",
+          "gain": 50
+        },
+        {
+          "joueur_id": "7",
+          "position_id": "3",
+          "mise_id": "1",
+          "gain": 20
+        },
+        {
+          "joueur_id": "4",
+          "position_id": "4",
+          "mise_id": "2",
+          "gain": 0
+        },
+        {
+          "joueur_id": "6",
+          "position_id": "5",
+          "mise_id": "1",
+          "gain": 0
+        },
+        {
+          "joueur_id": "8",
+          "position_id": "6",
+          "mise_id": "3",
+          "gain": 0
+        },
+        {
+          "joueur_id": "2",
+          "position_id": "7",
+          "mise_id": "1",
+          "gain": 0
+        },
+        {
+          "joueur_id": "5",
+          "position_id": "8",
+          "mise_id": "3",
+          "gain": 0
+        }
+      ]
+    },
+    {
+      "id": "6",
+      "name": "Poker 6",
+      "participants": [
+        {
+          "joueur_id": "3",
+          "position_id": "1",
+          "mise_id": "1",
+          "gain": 90
+        },
+        {
+          "joueur_id": "7",
+          "position_id": "2",
+          "mise_id": "2",
+          "gain": 40
+        },
+        {
+          "joueur_id": "9",
+          "position_id": "3",
+          "mise_id": "3",
+          "gain": 10
+        },
+        {
+          "joueur_id": "2",
+          "position_id": "4",
+          "mise_id": "3",
+          "gain": 0
+        },
+        {
+          "joueur_id": "4",
+          "position_id": "5",
+          "mise_id": "1",
+          "gain": 0
+        },
+        {
+          "joueur_id": "1",
+          "position_id": "6",
+          "mise_id": "3",
+          "gain": 0
+        },
+        {
+          "joueur_id": "8",
+          "position_id": "7",
+          "mise_id": "1",
+          "gain": 0
+        }
+      ]
+    },
+    {
+      "id": "7",
+      "name": "Poker 7",
+      "participants": [
+        {
+          "joueur_id": "9",
+          "position_id": "1",
+          "mise_id": "2",
+          "gain": 120
+        },
+        {
+          "joueur_id": "1",
+          "position_id": "2",
+          "mise_id": "1",
+          "gain": 40
+        },
+        {
+          "joueur_id": "4",
+          "position_id": "3",
+          "mise_id": "3",
+          "gain": 20
+        },
+        {
+          "joueur_id": "7",
+          "position_id": "4",
+          "mise_id": "2",
+          "gain": 0
+        },
+        {
+          "joueur_id": "2",
+          "position_id": "5",
+          "mise_id": "1",
+          "gain": 0
+        },
+        {
+          "joueur_id": "14",
+          "position_id": "6",
+          "mise_id": "3",
+          "gain": 0
+        },
+        {
+          "joueur_id": "15",
+          "position_id": "7",
+          "mise_id": "3",
+          "gain": 0
+        },
+        {
+          "joueur_id": "5",
+          "position_id": "8",
+          "mise_id": "3",
+          "gain": 0
+        }
+      ]
+    },
+    {
+      "id": "8",
+      "name": "Poker 8",
+      "participants": [
+        {
+          "joueur_id": "9",
+          "position_id": "1",
+          "mise_id": "1",
+          "gain": 100
+        },
+        {
+          "joueur_id": "2",
+          "position_id": "2",
+          "mise_id": "1",
+          "gain": 60
+        },
+        {
+          "joueur_id": "4",
+          "position_id": "3",
+          "mise_id": "3",
+          "gain": 30
+        },
+        {
+          "joueur_id": "7",
+          "position_id": "4",
+          "mise_id": "2",
+          "gain": 0
+        },
+        {
+          "joueur_id": "6",
+          "position_id": "5",
+          "mise_id": "3",
+          "gain": 0
+        },
+        {
+          "joueur_id": "1",
+          "position_id": "6",
+          "mise_id": "3",
+          "gain": 0
+        },
+        {
+          "joueur_id": "3",
+          "position_id": "7",
+          "mise_id": "3",
+          "gain": 0
+        },
+        {
+          "joueur_id": "5",
+          "position_id": "8",
+          "mise_id": "3",
+          "gain": 0
+        }
+      ]
+    },
+    {
+      "id": "9",
+      "name": "Poker 9",
+      "participants": [
+        {
+          "joueur_id": "1",
+          "position_id": "1",
+          "mise_id": "1",
+          "gain": 80
+        },
+        {
+          "joueur_id": "2",
+          "position_id": "2",
+          "mise_id": "1",
+          "gain": 0
+        },
+        {
+          "joueur_id": "3",
+          "position_id": "3",
+          "mise_id": "1",
+          "gain": 0
+        },
+        {
+          "joueur_id": "4",
+          "position_id": "4",
+          "mise_id": "1",
+          "gain": 0
+        },
+        {
+          "joueur_id": "5",
+          "position_id": "5",
+          "mise_id": "1",
+          "gain": 0
+        },
+        {
+          "joueur_id": "6",
+          "position_id": "6",
+          "mise_id": "1",
+          "gain": 0
+        },
+        {
+          "joueur_id": "7",
+          "position_id": "7",
+          "mise_id": "1",
+          "gain": 0
+        },
+        {
+          "joueur_id": "8",
+          "position_id": "8",
+          "mise_id": "1",
+          "gain": 0
+        }
+      ]
+    }
+  ]
+}
