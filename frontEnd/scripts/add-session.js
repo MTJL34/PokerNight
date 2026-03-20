@@ -133,6 +133,19 @@ function parseMoney(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function parseStackPer10Value({ required = false } = {}) {
+  const rawStackPer10 = String(refs.stackPer10Input?.value || "").trim();
+  if (!rawStackPer10) {
+    if (required) throw new Error("Le champ 10 € = stack est obligatoire.");
+    return null;
+  }
+  const stackPer10 = Number(rawStackPer10);
+  if (!Number.isInteger(stackPer10) || stackPer10 <= 0) {
+    throw new Error("Le champ 10 € = stack doit etre un entier positif.");
+  }
+  return stackPer10;
+}
+
 function parseChipValuesFromInputs() {
   const out = {};
   for (const color of CHIP_COLORS) {
@@ -224,7 +237,16 @@ function updateSessionTotalsInfo() {
   if (!refs.sessionTotalsInfo) return;
   const misesTotal = getSelectedMisesTotal();
   const gainsTotal = getDistributedGainsTotalFromRows();
-  refs.sessionTotalsInfo.textContent = `Total mises: ${misesTotal} € | Total gains: ${gainsTotal} €`;
+  let stackPer10 = null;
+  try {
+    stackPer10 = parseStackPer10Value();
+  } catch {
+    stackPer10 = null;
+  }
+  const stackTotal = stackPer10 == null
+    ? "-"
+    : String(Math.round((misesTotal / BUYIN_UNIT_EUR) * stackPer10));
+  refs.sessionTotalsInfo.textContent = `Argent total en jeu: ${misesTotal} € | Stack total: ${stackTotal} | Total gains: ${gainsTotal} €`;
 }
 
 function updateDistributedInfo() {
@@ -659,11 +681,7 @@ function buildNewSession() {
   const isClosed = String(refs.sessionStatusInput?.value || "open") === "closed";
   if (!id || !name) throw new Error("ID et nom de session obligatoires.");
 
-  const rawStackPer10 = String(refs.stackPer10Input?.value || "").trim();
-  const stackPer10 = rawStackPer10 ? Number(rawStackPer10) : null;
-  if (rawStackPer10 && (!Number.isInteger(stackPer10) || stackPer10 <= 0)) {
-    throw new Error("Le champ 10 € = stack doit etre un entier positif.");
-  }
+  const stackPer10 = parseStackPer10Value({ required: true });
 
   const chipValues = parseChipValuesFromInputs();
 
@@ -1009,6 +1027,14 @@ refs.tbody.addEventListener("change", (e) => {
     buildGainSelectOptions();
     updateDistributedInfo();
   }
+});
+refs.stackPer10Input?.addEventListener("input", () => {
+  try {
+    parseStackPer10Value();
+  } catch {
+    // Ignore validation errors while typing; full validation is done on save.
+  }
+  updateSessionTotalsInfo();
 });
 refs.sessionStatusInput?.addEventListener("change", () => {
   const isClosed = String(refs.sessionStatusInput?.value || "open") === "closed";
