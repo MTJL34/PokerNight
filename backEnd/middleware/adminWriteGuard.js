@@ -12,6 +12,10 @@ function getProvidedKey(req) {
   return "";
 }
 
+function getProvidedCode(req) {
+  return String(req.headers["x-admin-code"] || "").trim();
+}
+
 function adminWriteGuard(req, res, next) {
   if (READ_METHODS.has(req.method)) return next();
 
@@ -29,6 +33,22 @@ function adminWriteGuard(req, res, next) {
 
   if (providedKey !== expectedKey) {
     return res.status(403).json({ message: "Invalid admin key" });
+  }
+
+  const expectedCode = String(process.env.ADMIN_CONFIRM_CODE || "").trim();
+  if (!expectedCode) {
+    return res.status(503).json({
+      message: "Write access disabled: ADMIN_CONFIRM_CODE not configured",
+    });
+  }
+
+  const providedCode = getProvidedCode(req);
+  if (!providedCode) {
+    return res.status(401).json({ message: "Missing admin confirmation code" });
+  }
+
+  if (providedCode !== expectedCode) {
+    return res.status(403).json({ message: "Invalid admin confirmation code" });
   }
 
   return next();
