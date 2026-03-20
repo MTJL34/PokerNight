@@ -24,8 +24,9 @@ const TABLE_LAYOUT_URL = "./data/poker_tableau_layout.json";
 const PLAYERS_URL = "./data/players.json";
 const POSITIONS_URL = "./data/positions.json";
 const MISES_URL = "./data/mises.json";
+const isLocalhost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
 const API_BASES = window.location.origin?.startsWith("http")
-  ? ["", "http://localhost:8000"]
+  ? (isLocalhost ? ["", "http://localhost:8000"] : [""])
   : ["http://localhost:8000"];
 const ADMIN_KEY_STORAGE = "poker_admin_key";
 const ADMIN_CODE_STORAGE = "poker_admin_code";
