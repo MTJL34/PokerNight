@@ -60,6 +60,99 @@ h2{
   align-items:end;
 }
 
+body.addSessionMode .container{
+  width:min(1200px, 94vw);
+}
+
+.addSessionMode .sessionBackBtn{
+  width:auto;
+  min-width:120px;
+}
+
+.addSessionMode .sessionEditor{
+  padding:14px;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+
+.addSessionMode .sessionForm{
+  margin-top:0;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+
+.addSessionMode .sessionForm__base{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:12px;
+  max-width:520px;
+}
+
+.addSessionMode .sessionField{
+  margin:0;
+}
+
+.addSessionMode .sessionField--stack{
+  max-width:320px;
+}
+
+.addSessionMode .sessionForm__chips{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:12px;
+}
+
+.addSessionMode .chipField{
+  margin:0;
+  padding-left:10px;
+  border-left:3px solid var(--line);
+}
+
+.addSessionMode .chipField--orange{ border-left-color:#d8892f; }
+.addSessionMode .chipField--black{ border-left-color:#6e7781; }
+.addSessionMode .chipField--green{ border-left-color:#2fb574; }
+.addSessionMode .chipField--yellow{ border-left-color:#e0b45b; }
+.addSessionMode .chipField--red{ border-left-color:#d65f5f; }
+.addSessionMode .chipField--white{ border-left-color:#d2d8e0; }
+
+.addSessionMode .sessionForm__meta{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:12px;
+  align-items:end;
+}
+
+.addSessionMode .sessionForm__meta .btn{
+  width:100%;
+}
+
+.addSessionMode .sessionParticipants{
+  margin-top:0;
+}
+
+.addSessionMode .sessionHeadActions,
+.addSessionMode .sessionBottomActions{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
+.addSessionMode .sessionHeadActions .btn,
+.addSessionMode .sessionBottomActions .btn{
+  width:100%;
+}
+
+.addSessionMode .sessionBottomActions{
+  justify-content:flex-end;
+}
+
+.addSessionMode .sessionTotalsInfo{
+  padding:10px 14px;
+  border-top:1px solid var(--line);
+}
+
 .field span{
   display:block;
   font-size:12px;
@@ -607,6 +700,29 @@ tbody tr:hover{ background:rgba(224,180,91,.08); }
   .sessionCard__title .btn{
     min-width:0;
   }
+
+  .addSessionMode .sessionForm__chips{
+    grid-template-columns:repeat(3, minmax(0, 1fr));
+  }
+
+  .addSessionMode .sessionForm__meta{
+    grid-template-columns:minmax(200px, 260px) minmax(200px, 260px) auto;
+  }
+
+  .addSessionMode .sessionForm__meta .btn{
+    width:auto;
+    min-width:150px;
+  }
+
+  .addSessionMode .sessionHeadActions{
+    justify-content:flex-end;
+  }
+
+  .addSessionMode .sessionHeadActions .btn,
+  .addSessionMode .sessionBottomActions .btn{
+    width:auto;
+    min-width:180px;
+  }
 }
 
 @media (min-width: 921px){
@@ -628,6 +744,10 @@ tbody tr:hover{ background:rgba(224,180,91,.08); }
 }
 
 @media (max-width: 760px){
+  .addSessionMode .sessionForm__chips{
+    grid-template-columns:1fr;
+  }
+
   .leaderboard .megaWrap{
     border:1px solid rgba(224,180,91,.45);
     border-radius:10px;
