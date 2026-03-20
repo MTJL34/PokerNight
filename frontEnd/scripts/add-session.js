@@ -690,7 +690,12 @@ function buildNewSession() {
   const isClosed = String(refs.sessionStatusInput?.value || "open") === "closed";
   if (!id || !name) throw new Error("ID et nom de session obligatoires.");
 
-  const stackPer10 = parseStackPer10Value({ required: true });
+  const rawStackPer10 = String(refs.stackPer10Input?.value || "").trim();
+  const parsedStackPer10 = parseStackPer10Value();
+  const stackPer10 = rawStackPer10 ? parsedStackPer10 : DEFAULT_STACK_PER_10;
+  if (rawStackPer10 && parsedStackPer10 == null) {
+    throw new Error("Le champ 10 € = stack doit etre un entier positif.");
+  }
 
   const chipValues = parseChipValuesFromInputs();
 
