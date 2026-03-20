@@ -100,7 +100,16 @@ let eliminationOrderCounter = 0;
 const editSessionId = new URLSearchParams(window.location.search).get("editSessionId");
 const BUYIN_UNIT_EUR = 10;
 const MAX_BUYINS_PER_PLAYER = 3;
+const DEFAULT_STACK_PER_10 = 10000;
 const CHIP_COLORS = ["orange", "black", "green", "yellow", "red", "white"];
+const DEFAULT_CHIP_VALUES = Object.freeze({
+  orange: 50,
+  black: 100,
+  green: 500,
+  yellow: 1000,
+  red: 5000,
+  white: 10000
+});
 const CHIP_COLOR_LABELS = {
   orange: "orange",
   black: "noir",
@@ -135,13 +144,15 @@ function parseMoney(value) {
 
 function parseStackPer10Value({ required = false } = {}) {
   const rawStackPer10 = String(refs.stackPer10Input?.value || "").trim();
-  if (!rawStackPer10) {
+  const normalizedStackPer10 = rawStackPer10.replace(/\s+/g, "");
+  if (!normalizedStackPer10) {
     if (required) throw new Error("Le champ 10 € = stack est obligatoire.");
     return null;
   }
-  const stackPer10 = Number(rawStackPer10);
+  const stackPer10 = Number(normalizedStackPer10);
   if (!Number.isInteger(stackPer10) || stackPer10 <= 0) {
-    throw new Error("Le champ 10 € = stack doit etre un entier positif.");
+    if (required) throw new Error("Le champ 10 € = stack doit etre un entier positif.");
+    return null;
   }
   return stackPer10;
 }
@@ -183,9 +194,14 @@ function getChipValuesFromApiSession(session = {}) {
 }
 
 function setChipValuesInInputs(chipValues = {}) {
+  if (refs.stackPer10Input instanceof HTMLInputElement) {
+    refs.stackPer10Input.placeholder = String(DEFAULT_STACK_PER_10);
+  }
   for (const color of CHIP_COLORS) {
     const input = refs.chipValueInputs?.[color];
     if (!(input instanceof HTMLInputElement)) continue;
+    const defaultPlaceholder = DEFAULT_CHIP_VALUES[color];
+    input.placeholder = defaultPlaceholder == null ? "" : String(defaultPlaceholder);
     const value = chipValues[color];
     input.value = value == null ? "" : String(value);
   }
@@ -237,16 +253,9 @@ function updateSessionTotalsInfo() {
   if (!refs.sessionTotalsInfo) return;
   const misesTotal = getSelectedMisesTotal();
   const gainsTotal = getDistributedGainsTotalFromRows();
-  let stackPer10 = null;
-  try {
-    stackPer10 = parseStackPer10Value();
-  } catch {
-    stackPer10 = null;
-  }
-  const stackTotal = stackPer10 == null
-    ? "-"
-    : String(Math.round((misesTotal / BUYIN_UNIT_EUR) * stackPer10));
-  refs.sessionTotalsInfo.textContent = `Argent total en jeu: ${misesTotal} € | Stack total: ${stackTotal} | Total gains: ${gainsTotal} €`;
+  const stackPer10 = parseStackPer10Value() ?? DEFAULT_STACK_PER_10;
+  const stackTotal = Math.round((misesTotal / BUYIN_UNIT_EUR) * stackPer10);
+  refs.sessionTotalsInfo.textContent = `Argent total en jeu: ${misesTotal} € | Stacks complets: ${stackTotal} | Total gains: ${gainsTotal} €`;
 }
 
 function updateDistributedInfo() {
@@ -1029,11 +1038,6 @@ refs.tbody.addEventListener("change", (e) => {
   }
 });
 refs.stackPer10Input?.addEventListener("input", () => {
-  try {
-    parseStackPer10Value();
-  } catch {
-    // Ignore validation errors while typing; full validation is done on save.
-  }
   updateSessionTotalsInfo();
 });
 refs.sessionStatusInput?.addEventListener("change", () => {

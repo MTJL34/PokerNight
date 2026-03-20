@@ -632,15 +632,12 @@ function getSessionCardRowEliminationOrder(row) {
 
 function setSessionCardRowEliminationOrder(row, order) {
   if (!(row instanceof HTMLElement)) return;
-  const cell = row.querySelector(".sessionElimOrderCell");
   const normalized = parsePositiveInt(order);
   if (normalized == null) {
     delete row.dataset.eliminationOrder;
-    if (cell) cell.textContent = "-";
     return;
   }
   row.dataset.eliminationOrder = String(normalized);
-  if (cell) cell.textContent = String(normalized);
 }
 
 function setSessionCardRowRank(row, rank, rankToPositionId) {
@@ -948,7 +945,7 @@ function renderSessionTablesHTML() {
                     <th>Joueurs</th>
                     <th>Mises</th>
                     <th>Gains</th>
-                    ${s.isOngoing ? "<th>Elimine</th><th>Ordre elim.</th>" : ""}
+                    ${s.isOngoing ? "<th>Elimine</th>" : ""}
                   </tr>
                 </thead>
                 <tbody>
@@ -981,7 +978,6 @@ function renderSessionTablesHTML() {
                               <span>Elimine</span>
                             </label>
                           </td>
-                          <td class="sessionElimOrderCell">${elimOrder == null ? "-" : String(elimOrder)}</td>
                         ` : ""}
                       </tr>
                     `;
