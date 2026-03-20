@@ -29,6 +29,7 @@ const API_BASES = window.location.origin?.startsWith("http")
   ? (isLocalhost ? ["", "http://localhost:8000"] : [""])
   : ["http://localhost:8000"];
 const ADMIN_KEY_STORAGE = "poker_admin_key";
+const ADMIN_DEFAULT_KEY = "poker_admin_local";
 const ADMIN_CODE_STORAGE = "poker_admin_code";
 
 const els = {
@@ -716,8 +717,7 @@ async function apiFetch(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
     const savedKey = String(sessionStorage.getItem(ADMIN_KEY_STORAGE) || "").trim();
-    const enteredKey = String(headers["x-admin-key"] || savedKey || window.prompt("Entrez la clé admin :") || "").trim();
-    if (!enteredKey) throw new Error("Admin key required");
+    const enteredKey = String(headers["x-admin-key"] || savedKey || ADMIN_DEFAULT_KEY || "").trim();
     sessionStorage.setItem(ADMIN_KEY_STORAGE, enteredKey);
     headers["x-admin-key"] = enteredKey;
 
