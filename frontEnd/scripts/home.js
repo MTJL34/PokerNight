@@ -67,6 +67,8 @@ let positionsById = null;
 let misesById = null;
 let importedDatasetName = "";
 let summarySortState = { key: "net", dir: "desc", sessionId: "" };
+let sessionMetaById = new Map();
+let ongoingSessionIds = new Set();
 
 const MONEY_HEADERS = /(benefice|bénéfice|resultat|résultat|solde|net|gain|profit)/i;
 const PLAYER_HEADERS = /(joueur|player|pseudo|nom)/i;
@@ -82,6 +84,44 @@ function isOriginalSheetMode() {
 function displayHeaderName(header, idx) {
   if (isSpreadsheetMode()) return toColumnLabel(idx);
   return header;
+}
+
+function isSessionOngoingById(sessionId) {
+  const sid = String(sessionId || "").trim();
+  if (!sid) return false;
+  const meta = sessionMetaById.get(sid);
+  if (meta && typeof meta.is_ongoing === "boolean") return meta.is_ongoing;
+  return ongoingSessionIds.has(sid);
+}
+
+function isRowInOngoingSession(row) {
+  return isSessionOngoingById(String(row?.session_numero || "").trim());
+}
+
+function getValidatedRows(rows) {
+  return (rows || []).filter((row) => !isRowInOngoingSession(row));
+}
+
+function compareSessionIdsWithOngoingFirst(a, b) {
+  const sidA = String(a || "").trim();
+  const sidB = String(b || "").trim();
+  const ongoingA = isSessionOngoingById(sidA);
+  const ongoingB = isSessionOngoingById(sidB);
+  if (ongoingA !== ongoingB) return ongoingA ? -1 : 1;
+
+  const na = Number(sidA);
+  const nb = Number(sidB);
+  if (Number.isFinite(na) && Number.isFinite(nb)) {
+    if (ongoingA) return nb - na;
+    return na - nb;
+  }
+  return sidA.localeCompare(sidB, "fr", { numeric: true, sensitivity: "base" });
+}
+
+function buildSessionLabel(sessionId, fallbackName = "") {
+  const sid = String(sessionId || "").trim();
+  const base = String(fallbackName || `Session ${sid}`).trim() || `Session ${sid}`;
+  return isSessionOngoingById(sid) ? `${base} (en cours)` : base;
 }
 
 function setStatus(text, kind = "idle") {
@@ -133,7 +173,7 @@ function buildSessionSelect() {
 
   const current = String(els.sessionSelect.value || "");
   const sessions = [...new Set(rawRows.map(r => String(r.session_numero ?? "").trim()).filter(Boolean))]
-    .sort((a, b) => Number(a) - Number(b));
+    .sort(compareSessionIdsWithOngoingFirst);
   const nameById = {};
   for (const row of rawRows) {
     const sid = String(row.session_numero ?? "").trim();
@@ -144,7 +184,10 @@ function buildSessionSelect() {
   els.sessionField.classList.remove("isHidden");
   els.sessionSelect.innerHTML = `
     <option value="">Toutes les sessions</option>
-    ${sessions.map(sid => `<option value="${escapeAttr(sid)}">${escapeHTML(nameById[sid] || `Session ${sid}`)}</option>`).join("")}
+    ${sessions.map((sid) => {
+      const name = buildSessionLabel(sid, nameById[sid] || `Session ${sid}`);
+      return `<option value="${escapeAttr(sid)}">${escapeHTML(name)}</option>`;
+    }).join("")}
   `;
 
   if (current && sessions.includes(current)) {
@@ -221,15 +264,22 @@ function renderStats() {
   const shown = viewRows.length;
 
   if (isSessionRows()) {
-    const sessions = new Set(viewRows.map(r => String(r.session_numero ?? "").trim())).size;
-    const participations = viewRows.length;
-    const joueurs = new Set(viewRows.map(r => String(r.joueur_id ?? "").trim()).filter(Boolean)).size;
-    const argentTotal = viewRows.reduce((acc, r) => acc + (Number(r.gain ?? 0) || 0), 0);
-    const totalMises = viewRows.reduce((acc, r) => acc + (Number(r.mise ?? 0) || 0), 0);
+    const validatedRows = getValidatedRows(viewRows);
+    const sessions = new Set(validatedRows.map(r => String(r.session_numero ?? "").trim())).size;
+    const participations = validatedRows.length;
+    const joueurs = new Set(validatedRows.map(r => String(r.joueur_id ?? "").trim()).filter(Boolean)).size;
+    const argentTotal = validatedRows.reduce((acc, r) => acc + (Number(r.gain ?? 0) || 0), 0);
+    const totalMises = validatedRows.reduce((acc, r) => acc + (Number(r.mise ?? 0) || 0), 0);
     const miseMoyenne = participations ? (totalMises / participations) : 0;
     const gainsMoyensParSession = sessions ? (argentTotal / sessions) : 0;
     const misesMoyennesParSession = sessions ? (totalMises / sessions) : 0;
     const misesMoyennesParSessionParJoueur = joueurs ? (misesMoyennesParSession / joueurs) : 0;
+    const sessionsEnCours = new Set(
+      viewRows
+        .filter((r) => isRowInOngoingSession(r))
+        .map((r) => String(r.session_numero ?? "").trim())
+        .filter(Boolean)
+    ).size;
 
     const cards = [
       { k: "Nombre de sessions", v: sessions },
@@ -237,7 +287,8 @@ function renderStats() {
       { k: "Argent total dépensé", v: `${formatAmount(argentTotal)} €` },
       { k: "Mise moyenne au total", v: `${formatAmount(miseMoyenne)} €` },
       { k: "Gains moyens par session", v: `${formatAmount(gainsMoyensParSession)} €` },
-      { k: "Mises moyennes par session par joueur", v: `${formatAmount(misesMoyennesParSessionParJoueur)} €` }
+      { k: "Mises moyennes par session par joueur", v: `${formatAmount(misesMoyennesParSessionParJoueur)} €` },
+      { k: "Sessions en cours (hors stats)", v: sessionsEnCours }
     ];
 
     els.statsCards.innerHTML = cards.map(c => `
@@ -336,18 +387,21 @@ function isSessionRows() {
 }
 
 function renderSessionSummaryTable() {
+  const validatedRows = getValidatedRows(viewRows);
+  const sessionTablesHTML = renderSessionTablesHTML();
+
   const sessionNameById = {};
-  for (const row of viewRows) {
+  for (const row of validatedRows) {
     const sid = String(row.session_numero ?? "").trim();
     const sname = String(row.session_nom ?? "").trim();
     if (sid && sname && !sessionNameById[sid]) sessionNameById[sid] = sname;
   }
 
-  const sessionIds = [...new Set(viewRows.map(r => String(r.session_numero ?? "").trim()).filter(Boolean))]
+  const sessionIds = [...new Set(validatedRows.map(r => String(r.session_numero ?? "").trim()).filter(Boolean))]
     .sort((a, b) => Number(a) - Number(b));
   const playerMap = new Map();
 
-  for (const row of viewRows) {
+  for (const row of validatedRows) {
     const playerId = String(row.joueur_id ?? "").trim();
     const playerName = String(row.joueur ?? "").trim() || playerId;
     const sid = String(row.session_numero ?? "").trim();
@@ -397,9 +451,13 @@ function renderSessionSummaryTable() {
 
   players.sort((a, b) => compareSummaryPlayers(a, b));
 
-  els.leaderboardMeta.textContent = `${players.length} joueurs`;
+  els.leaderboardMeta.textContent = `${players.length} joueurs (sessions validées)`;
   if (!players.length) {
-    els.leaderboard.innerHTML = `<div class="muted">Aucune session à afficher.</div>`;
+    els.leaderboard.innerHTML = `
+      <div class="muted">Aucune session validée à afficher dans les stats.</div>
+      ${sessionTablesHTML}
+    `;
+    bindSessionDeleteButtons();
     return;
   }
 
@@ -416,7 +474,7 @@ function renderSessionSummaryTable() {
   totals.net = totals.gains - totals.mises;
 
   const sessionCounts = Object.fromEntries(sessionIds.map(sid => [sid, 0]));
-  for (const row of viewRows) {
+  for (const row of validatedRows) {
     const sid = String(row.session_numero ?? "").trim();
     if (sid && Object.prototype.hasOwnProperty.call(sessionCounts, sid)) sessionCounts[sid] += 1;
   }
@@ -448,8 +506,6 @@ function renderSessionSummaryTable() {
     if (ratio >= 0.55) return "partMid";
     return "partLow";
   };
-
-  const sessionTablesHTML = renderSessionTablesHTML();
 
   els.leaderboard.innerHTML = `
     <div class="megaWrap">
@@ -531,16 +587,7 @@ function renderSessionSummaryTable() {
     });
   });
 
-  els.leaderboard.querySelectorAll(".sessionDeleteBtn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      try {
-        await deleteSessionById(btn.dataset.sessionId || "");
-      } catch (err) {
-        console.error(err);
-        setStatus("Suppression impossible", "bad");
-      }
-    });
-  });
+  bindSessionDeleteButtons();
 }
 
 function compareSummaryPlayers(a, b) {
@@ -563,6 +610,19 @@ function getSummarySortValue(p, key, sessionId) {
   return p[key];
 }
 
+function bindSessionDeleteButtons() {
+  els.leaderboard.querySelectorAll(".sessionDeleteBtn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await deleteSessionById(btn.dataset.sessionId || "");
+      } catch (err) {
+        console.error(err);
+        setStatus("Suppression impossible", "bad");
+      }
+    });
+  });
+}
+
 function renderSessionTablesHTML() {
   const bySession = new Map();
   for (const row of viewRows) {
@@ -570,21 +630,30 @@ function renderSessionTablesHTML() {
     const fallbackName = id ? `Session ${id}` : "Session";
     const name = String(row.session_nom ?? fallbackName);
     const key = `${id}::${name}`;
-    if (!bySession.has(key)) bySession.set(key, { id, name, rows: [] });
+    if (!bySession.has(key)) {
+      bySession.set(key, { id, name, rows: [], isOngoing: isSessionOngoingById(id) });
+    }
     bySession.get(key).rows.push(row);
   }
 
-  const sessions = [...bySession.values()].sort((a, b) => Number(a.id) - Number(b.id));
+  const sessions = [...bySession.values()].sort((a, b) => compareSessionIdsWithOngoingFirst(a.id, b.id));
   if (!sessions.length) return "";
 
   return `
     <div class="sessionTables">
       ${sessions.map(s => {
         const rows = [...s.rows].sort((a, b) => Number(a.position) - Number(b.position));
+        const statusText = s.isOngoing ? "En cours" : "Validée";
+        const statusStyle = s.isOngoing
+          ? "background:rgba(241,196,15,.16);border:1px solid rgba(241,196,15,.55);color:#ffe9a6;"
+          : "background:rgba(47,181,116,.16);border:1px solid rgba(47,181,116,.55);color:#d7ffe8;";
         return `
           <section class="sessionCard">
             <div class="sessionCard__title" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-              <span>${escapeHTML(s.name)}</span>
+              <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <span>${escapeHTML(s.name)}</span>
+                <span style="padding:3px 8px;border-radius:999px;font-size:11px;font-weight:700;${statusStyle}">${statusText}</span>
+              </span>
               <span style="display:flex;gap:8px;">
                 <a class="btn btnLink" href="./add-session.html?editSessionId=${escapeAttr(s.id)}">Modifier</a>
                 <button class="btn sessionDeleteBtn" type="button" data-session-id="${escapeAttr(s.id)}">Supprimer</button>
@@ -774,21 +843,49 @@ async function fetchSessionRowsFromApi() {
   const playerNameById = Object.fromEntries(
     (players || []).map((p) => [String(p.player_id), String(p.player_name || "").trim()])
   );
-  const sessionById = Object.fromEntries(
-    (sessions || []).map((s) => [String(s.session_id), s])
-  );
 
   const buyinTotals = new Map();
+  const buyinTotalsBySession = new Map();
   for (const b of (buyins || [])) {
     const key = `${b.session_id}|${b.player_id}`;
     buyinTotals.set(key, (buyinTotals.get(key) || 0) + Number(b.amount || 0));
+    const sid = String(b.session_id);
+    buyinTotalsBySession.set(sid, (buyinTotalsBySession.get(sid) || 0) + Number(b.amount || 0));
   }
 
   const payoutTotals = new Map();
+  const payoutTotalsBySession = new Map();
   for (const p of (payouts || [])) {
     const key = `${p.session_id}|${p.player_id}`;
     payoutTotals.set(key, Number(p.amount || 0));
+    const sid = String(p.session_id);
+    payoutTotalsBySession.set(sid, (payoutTotalsBySession.get(sid) || 0) + Number(p.amount || 0));
   }
+
+  sessionMetaById = new Map(
+    (sessions || []).map((s) => {
+      const sid = String(s.session_id);
+      const isClosed = Number(s.is_closed || 0) === 1;
+      const buyinTotal = Number(buyinTotalsBySession.get(sid) || 0);
+      const payoutTotal = Number(payoutTotalsBySession.get(sid) || 0);
+      const hasAssignedGains = payoutTotal > 0;
+      const payoutsBalanced = Math.abs(payoutTotal - buyinTotal) < 0.01;
+      const isOngoing = !isClosed || !hasAssignedGains || !payoutsBalanced;
+      return [sid, {
+        id: sid,
+        name: String(s.session_name || `Session ${sid}`),
+        is_closed: isClosed,
+        is_ongoing: isOngoing,
+        buyin_total: buyinTotal,
+        payout_total: payoutTotal
+      }];
+    })
+  );
+  ongoingSessionIds = new Set(
+    [...sessionMetaById.entries()]
+      .filter(([, meta]) => Boolean(meta?.is_ongoing))
+      .map(([sid]) => sid)
+  );
 
   const rows = (entries || []).map((e) => {
     const sid = String(e.session_id);
@@ -796,17 +893,18 @@ async function fetchSessionRowsFromApi() {
     const key = `${sid}|${pid}`;
     const buyin = Number(buyinTotals.get(key) || 0);
     const gain = Number(payoutTotals.get(key) || 0);
-    const session = sessionById[sid];
+    const session = sessionMetaById.get(sid);
     return {
       session_numero: sid,
-      session_nom: String(session?.session_name || `Session ${sid}`),
+      session_nom: String(session?.name || `Session ${sid}`),
       joueur_id: pid,
       joueur: String(e.player_name || playerNameById[pid] || pid),
       position_id: String(e.position_id ?? ""),
       position: String(e.rank_no ?? ""),
       mise_id: String(buyin / 10 || ""),
       mise: String(buyin),
-      gain: String(gain)
+      gain: String(gain),
+      session_is_ongoing: session?.is_ongoing ? "1" : "0"
     };
   });
 
