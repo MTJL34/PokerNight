@@ -195,6 +195,7 @@ function getChipValuesFromApiSession(session = {}) {
 
 function setChipValuesInInputs(chipValues = {}) {
   if (refs.stackPer10Input instanceof HTMLInputElement) {
+    refs.stackPer10Input.required = false;
     refs.stackPer10Input.placeholder = String(DEFAULT_STACK_PER_10);
   }
   for (const color of CHIP_COLORS) {
@@ -692,7 +693,7 @@ function buildNewSession() {
 
   const rawStackPer10 = String(refs.stackPer10Input?.value || "").trim();
   const parsedStackPer10 = parseStackPer10Value();
-  const stackPer10 = rawStackPer10 ? parsedStackPer10 : DEFAULT_STACK_PER_10;
+  const stackPer10 = parsedStackPer10 ?? DEFAULT_STACK_PER_10;
   if (rawStackPer10 && parsedStackPer10 == null) {
     throw new Error("Le champ 10 € = stack doit etre un entier positif.");
   }
@@ -917,6 +918,11 @@ async function finalizeSessionAndGoHome() {
 }
 
 async function loadData() {
+  if (refs.stackPer10Input instanceof HTMLInputElement) {
+    refs.stackPer10Input.required = false;
+    refs.stackPer10Input.placeholder = String(DEFAULT_STACK_PER_10);
+  }
+
   const [posRes, apiPlayers, apiSessions, apiEntries, apiBuyins, apiPayouts] = await Promise.all([
     fetch("./data/positions.json", { cache: "no-store" }),
     apiFetch("/api/players"),
