@@ -46,6 +46,15 @@ function readNonNegativeNumber(input, { integer = false } = {}) {
   return Math.floor(n);
 }
 
+function readNonNegativeNumberWithDefault(input, fallback, { integer = false } = {}) {
+  const n = parseAmount(input?.value);
+  const candidate = n == null ? fallback : n;
+  if (candidate == null) return 0;
+  if (!Number.isFinite(candidate) || candidate <= 0) return 0;
+  if (!integer) return candidate;
+  return Math.floor(candidate);
+}
+
 function formatNumber(value, decimals = 0) {
   const n = Number(value || 0);
   const safe = Number.isFinite(n) ? n : 0;
@@ -67,7 +76,7 @@ function formatTrimmed(value, maxDecimals = 2) {
 function applyDefaults() {
   for (const chip of chipRefs) {
     if (chip.valueInput instanceof HTMLInputElement) {
-      chip.valueInput.value = String(chip.defaultValue);
+      chip.valueInput.value = "";
       chip.valueInput.placeholder = String(chip.defaultValue);
     }
     if (chip.countInput instanceof HTMLInputElement) {
@@ -87,7 +96,7 @@ function updateCalculations() {
   let totalStack = 0;
 
   for (const chip of chipRefs) {
-    const chipValue = readNonNegativeNumber(chip.valueInput);
+    const chipValue = readNonNegativeNumberWithDefault(chip.valueInput, chip.defaultValue);
     const chipCount = readNonNegativeNumber(chip.countInput, { integer: true });
     const subtotal = chipValue * chipCount;
     totalStack += subtotal;
