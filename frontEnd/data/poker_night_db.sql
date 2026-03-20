@@ -7,6 +7,7 @@ START TRANSACTION;
 -- Supprimer dans l'ordre des dependances
 DROP VIEW IF EXISTS v_session_financials;
 DROP TABLE IF EXISTS session_payouts;
+DROP TABLE IF EXISTS session_live_stacks;
 DROP TABLE IF EXISTS entry_buyins;
 DROP TABLE IF EXISTS session_entries;
 DROP TABLE IF EXISTS sessions;
@@ -51,6 +52,19 @@ CREATE TABLE session_entries (
   CONSTRAINT fk_entry_session FOREIGN KEY (session_id) REFERENCES sessions(session_id),
   CONSTRAINT fk_entry_player FOREIGN KEY (player_id) REFERENCES players(player_id),
   CONSTRAINT fk_entry_position FOREIGN KEY (position_id) REFERENCES positions(position_id)
+);
+
+-- Stack live par joueur pendant la session en cours
+CREATE TABLE session_live_stacks (
+  session_id INT NOT NULL,
+  player_id INT NOT NULL,
+  current_stack DECIMAL(14,4) NOT NULL DEFAULT 0,
+  blind_amount DECIMAL(14,4) NULL,
+  blinds_remaining_exact DECIMAL(14,6) NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (session_id, player_id),
+  CONSTRAINT fk_live_stack_entry FOREIGN KEY (session_id, player_id)
+    REFERENCES session_entries(session_id, player_id) ON DELETE CASCADE
 );
 
 -- Buy-ins atomiques: 1 ligne = 10 EUR

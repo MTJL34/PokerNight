@@ -12,6 +12,7 @@ const entriesRoutes = require("./routes/entriesRoutes");
 const buyinsRoutes = require("./routes/buyinsRoutes");
 const payoutsRoutes = require("./routes/payoutsRoutes");
 const financialsRoutes = require("./routes/financialsRoutes");
+const liveStacksRoutes = require("./routes/liveStacksRoutes");
 
 const app = express();
 
@@ -36,6 +37,7 @@ app.use("/api/entries", entriesRoutes);
 app.use("/api/buyins", buyinsRoutes);
 app.use("/api/payouts", payoutsRoutes);
 app.use("/api/financials", financialsRoutes);
+app.use("/api/live-stacks", liveStacksRoutes);
 
 app.get("/", (_req, res) => {
   res.sendFile(path.join(__dirname, "..", "frontEnd", "home.html"));
@@ -60,6 +62,20 @@ app.use((err, _req, res, _next) => {
 const PORT = Number(process.env.PORT || 8000);
 
 async function ensureSchemaUpgrades() {
+  const hasTable = async (tableName) => {
+    const [rows] = await db.query(
+      `
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = DATABASE()
+          AND table_name = ?
+        LIMIT 1
+      `,
+      [tableName]
+    );
+    return rows.length > 0;
+  };
+
   const hasColumn = async (tableName, columnName) => {
     const [rows] = await db.query(
       `
@@ -104,6 +120,23 @@ async function ensureSchemaUpgrades() {
   }
   if (!(await hasColumn("session_entries", "is_eliminated"))) {
     await db.query("ALTER TABLE session_entries ADD COLUMN is_eliminated TINYINT(1) NOT NULL DEFAULT 0");
+  }
+  if (!(await hasTable("session_live_stacks"))) {
+    await db.query(`
+      CREATE TABLE session_live_stacks (
+        session_id INT NOT NULL,
+        player_id INT NOT NULL,
+        current_stack DECIMAL(14,4) NOT NULL DEFAULT 0,
+        blind_amount DECIMAL(14,4) NULL,
+        blinds_remaining_exact DECIMAL(14,6) NULL,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (session_id, player_id),
+        CONSTRAINT fk_live_stack_entry
+          FOREIGN KEY (session_id, player_id)
+          REFERENCES session_entries(session_id, player_id)
+          ON DELETE CASCADE
+      )
+    `);
   }
 
   await db.query(`
