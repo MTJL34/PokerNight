@@ -23,7 +23,8 @@ async function apiFetch(path, options = {}) {
     headers["x-admin-code"] = enteredCode;
   }
 
-  let lastError = null;
+  let lastNetworkError = null;
+  let lastApiError = null;
   for (const base of API_BASES) {
     try {
       const res = await fetch(`${base}${path}`, {
@@ -42,16 +43,16 @@ async function apiFetch(path, options = {}) {
           sessionStorage.removeItem(ADMIN_KEY_STORAGE);
           sessionStorage.removeItem(ADMIN_CODE_STORAGE);
         }
-        lastError = new Error(`API ${res.status}${detail ? `: ${detail}` : ""}`);
+        lastApiError = lastApiError || new Error(`API ${res.status}${detail ? `: ${detail}` : ""}`);
         continue;
       }
       const text = await res.text();
       return text ? JSON.parse(text) : null;
     } catch (err) {
-      lastError = err;
+      lastNetworkError = err;
     }
   }
-  throw lastError || new Error("API unreachable");
+  throw lastApiError || lastNetworkError || new Error("API unreachable");
 }
 
 const refs = {
