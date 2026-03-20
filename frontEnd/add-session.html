@@ -15,55 +15,60 @@
         <a class="btn btnLink" href="./home.html">Retour</a>
       </div>
       <div style="padding:14px;">
-        <form id="sessionForm" class="controls" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));">
-          <label class="field">
-            <span>ID session</span>
-            <input id="sessionId" type="text" required />
-          </label>
-          <label class="field">
+        <form id="sessionForm" class="controls" style="display:flex;flex-direction:column;gap:12px;">
+          <input id="sessionId" type="hidden" />
+
+          <label class="field" style="max-width:460px;">
             <span>Nom session</span>
             <input id="sessionName" type="text" required placeholder="Ex: Poker 9" />
           </label>
-          <label class="field">
+
+          <label class="field" style="max-width:320px;">
             <span>10 € = stack</span>
             <input id="stackPer10Input" type="number" min="1" step="1" placeholder="Ex: 10000" />
           </label>
-          <label class="field">
-            <span>Valeur jeton orange</span>
-            <input id="chipValueOrangeInput" type="number" min="0.0001" step="0.0001" placeholder="Ex: 100" />
-          </label>
-          <label class="field">
-            <span>Valeur jeton noir</span>
-            <input id="chipValueBlackInput" type="number" min="0.0001" step="0.0001" placeholder="Ex: 500" />
-          </label>
-          <label class="field">
-            <span>Valeur jeton vert</span>
-            <input id="chipValueGreenInput" type="number" min="0.0001" step="0.0001" placeholder="Ex: 1000" />
-          </label>
-          <label class="field">
-            <span>Valeur jeton jaune</span>
-            <input id="chipValueYellowInput" type="number" min="0.0001" step="0.0001" placeholder="Ex: 5000" />
-          </label>
-          <label class="field">
-            <span>Valeur jeton rouge</span>
-            <input id="chipValueRedInput" type="number" min="0.0001" step="0.0001" placeholder="Ex: 10000" />
-          </label>
-          <label class="field">
-            <span>Valeur jeton blanc</span>
-            <input id="chipValueWhiteInput" type="number" min="0.0001" step="0.0001" placeholder="Ex: 50000" />
-          </label>
-          <label class="field">
-            <span>Statut session</span>
-            <select id="sessionStatusInput">
-              <option value="open" selected>Ouverte</option>
-              <option value="closed">Fermee</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Nombre de participants</span>
-            <input id="participantCount" type="number" min="1" step="1" value="8" />
-          </label>
-          <button id="applyCountBtn" class="btn" type="button">Appliquer</button>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
+            <label class="field">
+              <span>Valeur jeton orange</span>
+              <input id="chipValueOrangeInput" type="number" min="1" step="1" placeholder="50" />
+            </label>
+            <label class="field">
+              <span>Valeur jeton noir</span>
+              <input id="chipValueBlackInput" type="number" min="1" step="1" placeholder="100" />
+            </label>
+            <label class="field">
+              <span>Valeur jeton vert</span>
+              <input id="chipValueGreenInput" type="number" min="1" step="1" placeholder="500" />
+            </label>
+            <label class="field">
+              <span>Valeur jeton jaune</span>
+              <input id="chipValueYellowInput" type="number" min="1" step="1" placeholder="1000" />
+            </label>
+            <label class="field">
+              <span>Valeur jeton rouge</span>
+              <input id="chipValueRedInput" type="number" min="1" step="1" placeholder="5000" />
+            </label>
+            <label class="field">
+              <span>Valeur jeton blanc</span>
+              <input id="chipValueWhiteInput" type="number" min="1" step="1" placeholder="10 000" />
+            </label>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;align-items:end;">
+            <label class="field">
+              <span>Statut session</span>
+              <select id="sessionStatusInput">
+                <option value="open" selected>Ouverte</option>
+                <option value="closed">Fermee</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Nombre de participants</span>
+              <input id="participantCount" type="number" min="1" step="1" value="8" />
+            </label>
+            <button id="applyCountBtn" class="btn" type="button">Valider</button>
+          </div>
         </form>
 
         <div class="panel" style="margin-top:14px;">
