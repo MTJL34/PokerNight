@@ -47,6 +47,9 @@ async function apiFetch(path, options = {}) {
 const refs = {
   sessionId: document.getElementById("sessionId"),
   sessionName: document.getElementById("sessionName"),
+  stackPer10Input: document.getElementById("stackPer10Input"),
+  chipValueInput: document.getElementById("chipValueInput"),
+  sessionStatusInput: document.getElementById("sessionStatusInput"),
   participantCount: document.getElementById("participantCount"),
   applyCountBtn: document.getElementById("applyCountBtn"),
   addRowBtn: document.getElementById("addRowBtn"),
@@ -71,15 +74,22 @@ const refs = {
 
 let players = [];
 let positions = [];
-let mises = [];
 let sessionsData = { session: [] };
 let playersData = { session: [] };
 let gainsSplit = null;
 const editSessionId = new URLSearchParams(window.location.search).get("editSessionId");
+const BUYIN_UNIT_EUR = 10;
+const MAX_BUYINS_PER_PLAYER = 3;
 
 function updateGainsButtonLabel() {
-  const base = "Valider les gains";
+  const base = "Repartir les gains";
   if (!refs.openGainsModalBtn) return;
+  const isClosed = String(refs.sessionStatusInput?.value || "open") === "closed";
+  refs.openGainsModalBtn.disabled = !isClosed;
+  if (!isClosed) {
+    refs.openGainsModalBtn.textContent = `${base} (session ouverte)`;
+    return;
+  }
   if (!gainsSplit) {
     refs.openGainsModalBtn.textContent = base;
     return;
@@ -88,13 +98,27 @@ function updateGainsButtonLabel() {
   refs.openGainsModalBtn.textContent = `${base} (Total: ${total})`;
 }
 
+function parseMoney(value) {
+  const normalized = String(value || "").trim().replace(",", ".");
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeMiseAmount(value) {
+  const rounded = Math.round(parseMoney(value) / BUYIN_UNIT_EUR) * BUYIN_UNIT_EUR;
+  const clamped = Math.max(0, Math.min(MAX_BUYINS_PER_PLAYER * BUYIN_UNIT_EUR, rounded));
+  return clamped;
+}
+
+function sanitizeMiseInput(input) {
+  if (!(input instanceof HTMLInputElement)) return;
+  input.value = String(normalizeMiseAmount(input.value));
+}
+
 function getSelectedMisesTotal() {
   let total = 0;
   for (const row of refs.tbody.querySelectorAll("tr")) {
-    const miseId = String(row.querySelector(".p-mise")?.value || "").trim();
-    if (!miseId) continue;
-    const found = mises.find((m) => String(m.id) === miseId);
-    total += Number(found?.mise || 0);
+    total += normalizeMiseAmount(row.querySelector(".p-mise")?.value || 0);
   }
   return total;
 }
@@ -173,15 +197,32 @@ function refreshPlayerSelects() {
   enforceUniqueSelections();
 }
 
+function getPrefillMiseAmount(prefill = {}) {
+  if (prefill.mise != null && prefill.mise !== "") return normalizeMiseAmount(prefill.mise);
+  if (prefill.mise_amount != null && prefill.mise_amount !== "") return normalizeMiseAmount(prefill.mise_amount);
+  if (prefill.mise_id != null && prefill.mise_id !== "") {
+    return normalizeMiseAmount(Number(prefill.mise_id) * BUYIN_UNIT_EUR);
+  }
+  return BUYIN_UNIT_EUR;
+}
+
 function addRow(prefill = {}) {
+  const prefillMise = getPrefillMiseAmount(prefill);
+  const prefillGain = Number(prefill.gain ?? 0);
+  const prefillEliminated = prefill.is_eliminated === true
+    || prefill.is_eliminated === 1
+    || prefill.is_eliminated === "1";
+
   const tr = document.createElement("tr");
   tr.innerHTML = `
     <td><select class="p-player">${optionList(players, "id", "name")}</select></td>
     <td><select class="p-position">${optionList(positions, "id", "rang")}</select></td>
-    <td><select class="p-mise">${optionList(mises, "id", "mise")}</select></td>
-    <td class="p-gain-view">${Number(prefill.gain ?? 0)}</td>
+    <td><input class="p-mise" type="number" min="0" max="${MAX_BUYINS_PER_PLAYER * BUYIN_UNIT_EUR}" step="${BUYIN_UNIT_EUR}" value="${prefillMise}" /></td>
+    <td style="text-align:center;"><input class="p-eliminated" type="checkbox" ${prefillEliminated ? "checked" : ""} /></td>
+    <td class="p-gain-view">${prefillGain}</td>
     <td><button class="btn removeRow" type="button">Supprimer</button></td>
   `;
+  tr.dataset.eliminated = prefillEliminated ? "1" : "0";
   refs.tbody.appendChild(tr);
 
   const playerSelect = tr.querySelector(".p-player");
@@ -197,7 +238,7 @@ function addRow(prefill = {}) {
   } else {
     selectFirstAvailable(positionSelect, getUsedValues("p-position", tr));
   }
-  if (prefill.mise_id) tr.querySelector(".p-mise").value = String(prefill.mise_id);
+  sanitizeMiseInput(tr.querySelector(".p-mise"));
   enforceUniqueSelections();
   sortRowsByPosition();
   recalculateDisplayedGains();
@@ -428,7 +469,20 @@ async function addPlayerFromInput() {
 function buildNewSession() {
   const id = String(refs.sessionId.value || "").trim();
   const name = String(refs.sessionName.value || "").trim();
+  const isClosed = String(refs.sessionStatusInput?.value || "open") === "closed";
   if (!id || !name) throw new Error("ID et nom de session obligatoires.");
+
+  const rawStackPer10 = String(refs.stackPer10Input?.value || "").trim();
+  const stackPer10 = rawStackPer10 ? Number(rawStackPer10) : null;
+  if (rawStackPer10 && (!Number.isInteger(stackPer10) || stackPer10 <= 0)) {
+    throw new Error("Le champ 10 € = stack doit etre un entier positif.");
+  }
+
+  const rawChipValue = String(refs.chipValueInput?.value || "").trim();
+  const chipValue = rawChipValue ? parseMoney(rawChipValue) : null;
+  if (rawChipValue && (!Number.isFinite(chipValue) || chipValue <= 0)) {
+    throw new Error("La valeur d'un jeton doit etre un nombre positif.");
+  }
 
   const rows = [...refs.tbody.querySelectorAll("tr")];
   if (rows.length === 0) throw new Error("Ajoute au moins un participant.");
@@ -436,13 +490,22 @@ function buildNewSession() {
   const participants = rows.map((tr) => {
     const joueurId = String(tr.querySelector(".p-player")?.value || "").trim();
     const positionId = String(tr.querySelector(".p-position")?.value || "").trim();
+    const mise = normalizeMiseAmount(tr.querySelector(".p-mise")?.value || 0);
+    const eliminated = tr.querySelector(".p-eliminated")?.checked ? 1 : 0;
     if (!joueurId) throw new Error("Chaque participant doit avoir un joueur.");
     if (!positionId) throw new Error("Chaque participant doit avoir une position.");
+    if (mise % BUYIN_UNIT_EUR !== 0) {
+      throw new Error(`Chaque mise doit etre un multiple de ${BUYIN_UNIT_EUR} €.`);
+    }
+    if (mise < 0 || mise > MAX_BUYINS_PER_PLAYER * BUYIN_UNIT_EUR) {
+      throw new Error(`Chaque mise doit etre comprise entre 0 € et ${MAX_BUYINS_PER_PLAYER * BUYIN_UNIT_EUR} €.`);
+    }
 
     return {
       joueur_id: joueurId,
       position_id: positionId,
-      mise_id: String(tr.querySelector(".p-mise")?.value || ""),
+      mise,
+      is_eliminated: eliminated,
       gain: Number(tr.dataset.gain || 0)
     };
   });
@@ -456,7 +519,14 @@ function buildNewSession() {
     throw new Error("Une position ne peut être utilisée qu'une seule fois dans la session.");
   }
 
-  return { id, name, participants };
+  return {
+    id,
+    name,
+    is_closed: isClosed,
+    stack_per_10_eur: stackPer10,
+    chip_value: chipValue,
+    participants
+  };
 }
 
 function inferGainsSplitFromSession(session) {
@@ -473,7 +543,14 @@ function inferGainsSplitFromSession(session) {
 
 function buildStructuredSessionsFromApi(sessions, entries, buyins, payouts) {
   const sessionsById = new Map(
-    (sessions || []).map((s) => [String(s.session_id), { id: String(s.session_id), name: String(s.session_name || ""), participants: [] }])
+    (sessions || []).map((s) => [String(s.session_id), {
+      id: String(s.session_id),
+      name: String(s.session_name || ""),
+      is_closed: Boolean(Number(s.is_closed || 0)),
+      stack_per_10_eur: s.stack_per_10_eur == null ? null : Number(s.stack_per_10_eur),
+      chip_value: s.chip_value == null ? null : Number(s.chip_value),
+      participants: []
+    }])
   );
 
   const buyinTotals = new Map();
@@ -498,9 +575,16 @@ function buildStructuredSessionsFromApi(sessions, entries, buyins, payouts) {
     session.participants.push({
       joueur_id: pid,
       position_id: String(e.position_id || ""),
-      mise_id: String(mise / 10 || ""),
+      mise,
+      is_eliminated: Number(e.is_eliminated || 0) ? 1 : 0,
       gain: Number(payoutTotals.get(key) || 0)
     });
+  }
+
+  for (const session of sessionsById.values()) {
+    if (!session.is_closed) {
+      session.is_closed = session.participants.some((p) => Number(p.gain || 0) > 0);
+    }
   }
 
   return [...sessionsById.values()].sort((a, b) => Number(a.id) - Number(b.id));
@@ -517,6 +601,9 @@ function applyEditModeIfNeeded() {
 
   refs.sessionId.value = String(target.id || "");
   refs.sessionName.value = String(target.name || `Poker ${target.id || ""}`);
+  refs.sessionStatusInput.value = target.is_closed ? "closed" : "open";
+  refs.stackPer10Input.value = target.stack_per_10_eur == null ? "" : String(target.stack_per_10_eur);
+  refs.chipValueInput.value = target.chip_value == null ? "" : String(target.chip_value);
   refs.participantCount.value = String(Math.max(1, (target.participants || []).length));
   refs.tbody.innerHTML = "";
 
@@ -527,18 +614,26 @@ function applyEditModeIfNeeded() {
   });
   for (const p of participants) addRow(p);
 
-  gainsSplit = inferGainsSplitFromSession(target);
+  gainsSplit = target.is_closed ? inferGainsSplitFromSession(target) : null;
   recalculateDisplayedGains();
   updateGainsButtonLabel();
   updateGainsPoolInfo();
 }
 
 async function saveSessionJson() {
-  if (!gainsSplit) {
-    throw new Error("Valide les gains du top 3 avant d'enregistrer la session.");
+  const newSession = buildNewSession();
+  const participants = newSession.is_closed
+    ? [...newSession.participants]
+    : newSession.participants.map((p) => ({ ...p, gain: 0 }));
+
+  if (newSession.is_closed) {
+    const totalMises = participants.reduce((acc, p) => acc + Number(p.mise || 0), 0);
+    const totalGains = participants.reduce((acc, p) => acc + Number(p.gain || 0), 0);
+    if (totalMises !== totalGains) {
+      throw new Error(`Session fermee: tous les gains doivent etre distribues (${totalGains} € / ${totalMises} €).`);
+    }
   }
 
-  const newSession = buildNewSession(); // { id, name, participants }
   const existing = (sessionsData.session || []).some((s) => String(s.id) === String(newSession.id));
 
   if (existing) {
@@ -549,23 +644,26 @@ async function saveSessionJson() {
     method: "POST",
     body: JSON.stringify({
       session_id: Number(newSession.id),
-      session_name: newSession.name
+      session_name: newSession.name,
+      is_closed: newSession.is_closed ? 1 : 0,
+      stack_per_10_eur: newSession.stack_per_10_eur,
+      chip_value: newSession.chip_value
     })
   });
 
-  for (const p of newSession.participants) {
+  for (const p of participants) {
     await apiFetch("/api/entries", {
       method: "POST",
       body: JSON.stringify({
         session_id: Number(newSession.id),
         player_id: Number(p.joueur_id),
-        position_id: Number(p.position_id)
+        position_id: Number(p.position_id),
+        is_eliminated: Number(p.is_eliminated || 0)
       })
     });
 
-    const miseDef = mises.find((m) => String(m.id) === String(p.mise_id));
-    const totalMise = Number(miseDef?.mise || 0);
-    const buyinCount = Math.max(0, Math.min(3, Math.floor(totalMise / 10)));
+    const totalMise = Number(p.mise || 0);
+    const buyinCount = Math.max(0, Math.min(MAX_BUYINS_PER_PLAYER, Math.floor(totalMise / BUYIN_UNIT_EUR)));
     for (let i = 0; i < buyinCount; i += 1) {
       await apiFetch("/api/buyins", {
         method: "POST",
@@ -576,7 +674,7 @@ async function saveSessionJson() {
       });
     }
 
-    if (Number(p.gain || 0) > 0) {
+    if (newSession.is_closed && Number(p.gain || 0) > 0) {
       const rank = rankByPositionId(String(p.position_id));
       if (rank == null) continue;
       await apiFetch("/api/payouts", {
@@ -598,9 +696,8 @@ async function finalizeSessionAndGoHome() {
 }
 
 async function loadData() {
-  const [posRes, mRes, apiPlayers, apiSessions, apiEntries, apiBuyins, apiPayouts] = await Promise.all([
+  const [posRes, apiPlayers, apiSessions, apiEntries, apiBuyins, apiPayouts] = await Promise.all([
     fetch("./data/positions.json", { cache: "no-store" }),
-    fetch("./data/mises.json", { cache: "no-store" }),
     apiFetch("/api/players"),
     apiFetch("/api/sessions"),
     apiFetch("/api/entries"),
@@ -609,7 +706,6 @@ async function loadData() {
   ]);
 
   const posJson = await posRes.json();
-  const mJson = await mRes.json();
 
   players = (apiPlayers || []).map((p) => ({
     id: String(p.player_id),
@@ -617,7 +713,6 @@ async function loadData() {
   }));
   playersData = { session: [...players] };
   positions = Array.isArray(posJson.session) ? posJson.session : [];
-  mises = Array.isArray(mJson.session) ? mJson.session : [];
   sessionsData = {
     session: buildStructuredSessionsFromApi(apiSessions, apiEntries, apiBuyins, apiPayouts)
   };
@@ -628,6 +723,9 @@ async function loadData() {
   } else {
     refs.sessionId.value = String(maxSessionId + 1);
     refs.sessionName.value = `Poker ${maxSessionId + 1}`;
+    refs.sessionStatusInput.value = "open";
+    refs.stackPer10Input.value = "";
+    refs.chipValueInput.value = "";
     setParticipantRows(Number(refs.participantCount?.value || 8));
     updateGainsButtonLabel();
     updateGainsPoolInfo();
@@ -656,6 +754,10 @@ refs.confirmNewParticipantBtn.addEventListener("click", () => {
   })();
 });
 refs.openGainsModalBtn.addEventListener("click", () => {
+  if (String(refs.sessionStatusInput?.value || "open") !== "closed") {
+    alert("Passe la session en statut 'Fermee' pour repartir les gains.");
+    return;
+  }
   updateGainsPoolInfo();
   buildGainSelectOptions();
   refs.gainsModal.style.display = "flex";
@@ -672,7 +774,6 @@ refs.confirmGainsModalBtn.addEventListener("click", () => {
   (async () => {
     try {
       confirmGainsSplit();
-      await finalizeSessionAndGoHome();
     } catch (error) {
       alert(error.message);
     }
@@ -706,11 +807,27 @@ refs.tbody.addEventListener("change", (e) => {
       recalculateDisplayedGains();
     }
   }
-  if (e.target.classList.contains("p-mise")) updateGainsPoolInfo();
+  if (e.target.classList.contains("p-mise")) {
+    sanitizeMiseInput(e.target);
+    updateGainsPoolInfo();
+    updateGainsButtonLabel();
+  }
+  if (e.target.classList.contains("p-eliminated")) {
+    const row = e.target.closest("tr");
+    if (row) row.dataset.eliminated = e.target.checked ? "1" : "0";
+  }
   if (e.target.classList.contains("p-mise") && refs.gainsModal.style.display === "flex") {
     buildGainSelectOptions();
     updateDistributedInfo();
   }
+});
+refs.sessionStatusInput?.addEventListener("change", () => {
+  const isClosed = String(refs.sessionStatusInput?.value || "open") === "closed";
+  if (!isClosed) {
+    gainsSplit = null;
+    recalculateDisplayedGains();
+  }
+  updateGainsButtonLabel();
 });
 for (const gainSelect of [refs.gainFirstInput, refs.gainSecondInput, refs.gainThirdInput]) {
   gainSelect?.addEventListener("change", updateDistributedInfo);

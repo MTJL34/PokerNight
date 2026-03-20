@@ -1,5 +1,10 @@
 const db = require("../config/db");
 
+function parseEliminatedFlag(value) {
+  if (value === true || value === 1 || value === "1") return 1;
+  return 0;
+}
+
 async function getEntries(req, res, next) {
   try {
     const { session_id } = req.query;
@@ -9,6 +14,7 @@ async function getEntries(req, res, next) {
         se.player_id,
         p.player_name,
         se.position_id,
+        se.is_eliminated,
         pos.rank_no
       FROM session_entries se
       INNER JOIN players p ON p.player_id = se.player_id
@@ -32,7 +38,12 @@ async function getEntries(req, res, next) {
 
 async function createEntry(req, res, next) {
   try {
-    const { session_id, player_id, position_id } = req.body;
+    const {
+      session_id,
+      player_id,
+      position_id,
+      is_eliminated,
+    } = req.body;
 
     if (!session_id || !player_id || !position_id) {
       return res
@@ -40,9 +51,14 @@ async function createEntry(req, res, next) {
         .json({ message: "session_id, player_id and position_id are required" });
     }
 
+    const eliminatedFlag = parseEliminatedFlag(is_eliminated);
+
     await db.query(
-      "INSERT INTO session_entries (session_id, player_id, position_id) VALUES (?, ?, ?)",
-      [session_id, player_id, position_id]
+      `
+        INSERT INTO session_entries (session_id, player_id, position_id, is_eliminated)
+        VALUES (?, ?, ?, ?)
+      `,
+      [session_id, player_id, position_id, eliminatedFlag]
     );
 
     res.status(201).json({ message: "Entry created" });
@@ -54,15 +70,28 @@ async function createEntry(req, res, next) {
 async function updateEntry(req, res, next) {
   try {
     const { session_id, player_id } = req.params;
-    const { position_id } = req.body;
+    const { position_id, is_eliminated } = req.body;
 
-    if (!position_id) {
-      return res.status(400).json({ message: "position_id is required" });
+    const updates = [];
+    const values = [];
+
+    if (position_id != null && position_id !== "") {
+      updates.push("position_id = ?");
+      values.push(position_id);
+    }
+
+    if (is_eliminated != null) {
+      updates.push("is_eliminated = ?");
+      values.push(parseEliminatedFlag(is_eliminated));
+    }
+
+    if (!updates.length) {
+      return res.status(400).json({ message: "position_id or is_eliminated is required" });
     }
 
     const [result] = await db.query(
-      "UPDATE session_entries SET position_id = ? WHERE session_id = ? AND player_id = ?",
-      [position_id, session_id, player_id]
+      `UPDATE session_entries SET ${updates.join(", ")} WHERE session_id = ? AND player_id = ?`,
+      [...values, session_id, player_id]
     );
 
     if (!result.affectedRows) {

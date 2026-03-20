@@ -15,7 +15,7 @@
         <a class="btn btnLink" href="./home.html">Retour</a>
       </div>
       <div style="padding:14px;">
-        <form id="sessionForm" class="controls" style="grid-template-columns:1fr 1fr 1fr auto;">
+        <form id="sessionForm" class="controls" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));">
           <label class="field">
             <span>ID session</span>
             <input id="sessionId" type="text" required />
@@ -23,6 +23,21 @@
           <label class="field">
             <span>Nom session</span>
             <input id="sessionName" type="text" required placeholder="Ex: Poker 9" />
+          </label>
+          <label class="field">
+            <span>10 € = stack</span>
+            <input id="stackPer10Input" type="number" min="1" step="1" placeholder="Ex: 10000" />
+          </label>
+          <label class="field">
+            <span>Valeur d'un jeton (€)</span>
+            <input id="chipValueInput" type="number" min="0.0001" step="0.0001" placeholder="Ex: 0.0010" />
+          </label>
+          <label class="field">
+            <span>Statut session</span>
+            <select id="sessionStatusInput">
+              <option value="open" selected>Ouverte</option>
+              <option value="closed">Fermee</option>
+            </select>
           </label>
           <label class="field">
             <span>Nombre de participants</span>
@@ -45,7 +60,8 @@
                 <tr>
                   <th>Joueur existant</th>
                   <th>Position</th>
-                  <th>Mise</th>
+                  <th>Mise (€)</th>
+                  <th>Elimine</th>
                   <th>Gain (auto)</th>
                   <th>Action</th>
                 </tr>
@@ -59,7 +75,7 @@
         </div>
 
         <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
-          <button id="openGainsModalBtn" class="btn" type="button">Valider les gains</button>
+          <button id="openGainsModalBtn" class="btn" type="button">Repartir les gains</button>
           <button id="saveBtn" class="btn" type="button">Enregistrer la session</button>
         </div>
       </div>

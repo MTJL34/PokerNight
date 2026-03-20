@@ -28,7 +28,10 @@ CREATE TABLE positions (
 
 CREATE TABLE sessions (
   session_id INT PRIMARY KEY,
-  session_name VARCHAR(255) NOT NULL
+  session_name VARCHAR(255) NOT NULL,
+  is_closed TINYINT(1) NOT NULL DEFAULT 0,
+  stack_per_10_eur INT NULL,
+  chip_value DECIMAL(10,4) NULL
 );
 
 -- Une participation par joueur et session
@@ -36,6 +39,7 @@ CREATE TABLE session_entries (
   session_id INT NOT NULL,
   player_id INT NOT NULL,
   position_id INT NOT NULL,
+  is_eliminated TINYINT(1) NOT NULL DEFAULT 0,
   PRIMARY KEY (session_id, player_id),
   CONSTRAINT uq_entry_position UNIQUE (session_id, position_id),
   CONSTRAINT fk_entry_session FOREIGN KEY (session_id) REFERENCES sessions(session_id),
@@ -120,15 +124,15 @@ INSERT INTO positions (position_id, rank_no) VALUES
   (8, 8),
   (9, 9);
 
-INSERT INTO sessions (session_id, session_name) VALUES
-  (1, 'Poker 1'),
-  (2, 'Poker 2'),
-  (3, 'Poker 3'),
-  (4, 'Poker 4'),
-  (5, 'Poker 5'),
-  (6, 'Poker 6'),
-  (7, 'Poker 7'),
-  (8, 'Poker 8');
+INSERT INTO sessions (session_id, session_name, is_closed) VALUES
+  (1, 'Poker 1', 1),
+  (2, 'Poker 2', 1),
+  (3, 'Poker 3', 1),
+  (4, 'Poker 4', 1),
+  (5, 'Poker 5', 1),
+  (6, 'Poker 6', 1),
+  (7, 'Poker 7', 1),
+  (8, 'Poker 8', 1);
 
 INSERT INTO session_entries (session_id, player_id, position_id) VALUES
   (1, 2, 1),
