@@ -31,7 +31,13 @@ CREATE TABLE sessions (
   session_name VARCHAR(255) NOT NULL,
   is_closed TINYINT(1) NOT NULL DEFAULT 0,
   stack_per_10_eur INT NULL,
-  chip_value DECIMAL(10,4) NULL
+  chip_value DECIMAL(10,4) NULL,
+  chip_value_orange DECIMAL(10,4) NULL,
+  chip_value_black DECIMAL(10,4) NULL,
+  chip_value_green DECIMAL(10,4) NULL,
+  chip_value_yellow DECIMAL(10,4) NULL,
+  chip_value_red DECIMAL(10,4) NULL,
+  chip_value_white DECIMAL(10,4) NULL
 );
 
 -- Une participation par joueur et session

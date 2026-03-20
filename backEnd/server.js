@@ -84,6 +84,24 @@ async function ensureSchemaUpgrades() {
   if (!(await hasColumn("sessions", "chip_value"))) {
     await db.query("ALTER TABLE sessions ADD COLUMN chip_value DECIMAL(10,4) NULL");
   }
+  if (!(await hasColumn("sessions", "chip_value_orange"))) {
+    await db.query("ALTER TABLE sessions ADD COLUMN chip_value_orange DECIMAL(10,4) NULL");
+  }
+  if (!(await hasColumn("sessions", "chip_value_black"))) {
+    await db.query("ALTER TABLE sessions ADD COLUMN chip_value_black DECIMAL(10,4) NULL");
+  }
+  if (!(await hasColumn("sessions", "chip_value_green"))) {
+    await db.query("ALTER TABLE sessions ADD COLUMN chip_value_green DECIMAL(10,4) NULL");
+  }
+  if (!(await hasColumn("sessions", "chip_value_yellow"))) {
+    await db.query("ALTER TABLE sessions ADD COLUMN chip_value_yellow DECIMAL(10,4) NULL");
+  }
+  if (!(await hasColumn("sessions", "chip_value_red"))) {
+    await db.query("ALTER TABLE sessions ADD COLUMN chip_value_red DECIMAL(10,4) NULL");
+  }
+  if (!(await hasColumn("sessions", "chip_value_white"))) {
+    await db.query("ALTER TABLE sessions ADD COLUMN chip_value_white DECIMAL(10,4) NULL");
+  }
   if (!(await hasColumn("session_entries", "is_eliminated"))) {
     await db.query("ALTER TABLE session_entries ADD COLUMN is_eliminated TINYINT(1) NOT NULL DEFAULT 0");
   }

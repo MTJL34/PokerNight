@@ -23,6 +23,33 @@ function parseOptionalPositiveNumber(value, fieldName) {
   return n;
 }
 
+function resolveChipValues(payload = {}) {
+  const legacyChipValue = parseOptionalPositiveNumber(payload.chip_value, "chip_value");
+  const chipValues = {
+    orange: parseOptionalPositiveNumber(payload.chip_value_orange, "chip_value_orange"),
+    black: parseOptionalPositiveNumber(payload.chip_value_black, "chip_value_black"),
+    green: parseOptionalPositiveNumber(payload.chip_value_green, "chip_value_green"),
+    yellow: parseOptionalPositiveNumber(payload.chip_value_yellow, "chip_value_yellow"),
+    red: parseOptionalPositiveNumber(payload.chip_value_red, "chip_value_red"),
+    white: parseOptionalPositiveNumber(payload.chip_value_white, "chip_value_white"),
+  };
+
+  for (const key of Object.keys(chipValues)) {
+    if (chipValues[key] == null) chipValues[key] = legacyChipValue;
+  }
+
+  const unifiedChipValue = legacyChipValue
+    ?? chipValues.orange
+    ?? chipValues.black
+    ?? chipValues.green
+    ?? chipValues.yellow
+    ?? chipValues.red
+    ?? chipValues.white
+    ?? null;
+
+  return { ...chipValues, unifiedChipValue };
+}
+
 async function getSessions(_req, res, next) {
   try {
     const [rows] = await db.query(
@@ -32,7 +59,13 @@ async function getSessions(_req, res, next) {
           session_name,
           is_closed,
           stack_per_10_eur,
-          chip_value
+          chip_value,
+          chip_value_orange,
+          chip_value_black,
+          chip_value_green,
+          chip_value_yellow,
+          chip_value_red,
+          chip_value_white
         FROM sessions
         ORDER BY session_id ASC
       `
@@ -53,7 +86,13 @@ async function getSessionById(req, res, next) {
           session_name,
           is_closed,
           stack_per_10_eur,
-          chip_value
+          chip_value,
+          chip_value_orange,
+          chip_value_black,
+          chip_value_green,
+          chip_value_yellow,
+          chip_value_red,
+          chip_value_white
         FROM sessions
         WHERE session_id = ?
       `,
@@ -75,6 +114,12 @@ async function createSession(req, res, next) {
       is_closed,
       stack_per_10_eur,
       chip_value,
+      chip_value_orange,
+      chip_value_black,
+      chip_value_green,
+      chip_value_yellow,
+      chip_value_red,
+      chip_value_white,
     } = req.body;
 
     if (!session_id || !session_name) {
@@ -85,10 +130,18 @@ async function createSession(req, res, next) {
 
     const closedFlag = parseClosedFlag(is_closed);
     let stackPer10Eur;
-    let chipValue;
+    let chipValues;
     try {
       stackPer10Eur = parseOptionalPositiveInt(stack_per_10_eur, "stack_per_10_eur");
-      chipValue = parseOptionalPositiveNumber(chip_value, "chip_value");
+      chipValues = resolveChipValues({
+        chip_value,
+        chip_value_orange,
+        chip_value_black,
+        chip_value_green,
+        chip_value_yellow,
+        chip_value_red,
+        chip_value_white,
+      });
     } catch (validationErr) {
       return res.status(400).json({ message: validationErr.message });
     }
@@ -100,10 +153,28 @@ async function createSession(req, res, next) {
           session_name,
           is_closed,
           stack_per_10_eur,
-          chip_value
-        ) VALUES (?, ?, ?, ?, ?)
+          chip_value,
+          chip_value_orange,
+          chip_value_black,
+          chip_value_green,
+          chip_value_yellow,
+          chip_value_red,
+          chip_value_white
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      [session_id, session_name, closedFlag, stackPer10Eur, chipValue]
+      [
+        session_id,
+        session_name,
+        closedFlag,
+        stackPer10Eur,
+        chipValues.unifiedChipValue,
+        chipValues.orange,
+        chipValues.black,
+        chipValues.green,
+        chipValues.yellow,
+        chipValues.red,
+        chipValues.white,
+      ]
     );
 
     res.status(201).json({
@@ -112,7 +183,13 @@ async function createSession(req, res, next) {
       session_name,
       is_closed: closedFlag,
       stack_per_10_eur: stackPer10Eur,
-      chip_value: chipValue,
+      chip_value: chipValues.unifiedChipValue,
+      chip_value_orange: chipValues.orange,
+      chip_value_black: chipValues.black,
+      chip_value_green: chipValues.green,
+      chip_value_yellow: chipValues.yellow,
+      chip_value_red: chipValues.red,
+      chip_value_white: chipValues.white,
     });
   } catch (err) {
     next(err);
@@ -127,6 +204,12 @@ async function updateSession(req, res, next) {
       is_closed,
       stack_per_10_eur,
       chip_value,
+      chip_value_orange,
+      chip_value_black,
+      chip_value_green,
+      chip_value_yellow,
+      chip_value_red,
+      chip_value_white,
     } = req.body;
 
     if (!session_name) {
@@ -135,10 +218,18 @@ async function updateSession(req, res, next) {
 
     const closedFlag = parseClosedFlag(is_closed);
     let stackPer10Eur;
-    let chipValue;
+    let chipValues;
     try {
       stackPer10Eur = parseOptionalPositiveInt(stack_per_10_eur, "stack_per_10_eur");
-      chipValue = parseOptionalPositiveNumber(chip_value, "chip_value");
+      chipValues = resolveChipValues({
+        chip_value,
+        chip_value_orange,
+        chip_value_black,
+        chip_value_green,
+        chip_value_yellow,
+        chip_value_red,
+        chip_value_white,
+      });
     } catch (validationErr) {
       return res.status(400).json({ message: validationErr.message });
     }
@@ -150,10 +241,28 @@ async function updateSession(req, res, next) {
           session_name = ?,
           is_closed = ?,
           stack_per_10_eur = ?,
-          chip_value = ?
+          chip_value = ?,
+          chip_value_orange = ?,
+          chip_value_black = ?,
+          chip_value_green = ?,
+          chip_value_yellow = ?,
+          chip_value_red = ?,
+          chip_value_white = ?
         WHERE session_id = ?
       `,
-      [session_name, closedFlag, stackPer10Eur, chipValue, id]
+      [
+        session_name,
+        closedFlag,
+        stackPer10Eur,
+        chipValues.unifiedChipValue,
+        chipValues.orange,
+        chipValues.black,
+        chipValues.green,
+        chipValues.yellow,
+        chipValues.red,
+        chipValues.white,
+        id,
+      ]
     );
 
     if (!result.affectedRows) {

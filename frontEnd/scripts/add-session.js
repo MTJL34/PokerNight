@@ -48,7 +48,14 @@ const refs = {
   sessionId: document.getElementById("sessionId"),
   sessionName: document.getElementById("sessionName"),
   stackPer10Input: document.getElementById("stackPer10Input"),
-  chipValueInput: document.getElementById("chipValueInput"),
+  chipValueInputs: {
+    orange: document.getElementById("chipValueOrangeInput"),
+    black: document.getElementById("chipValueBlackInput"),
+    green: document.getElementById("chipValueGreenInput"),
+    yellow: document.getElementById("chipValueYellowInput"),
+    red: document.getElementById("chipValueRedInput"),
+    white: document.getElementById("chipValueWhiteInput")
+  },
   sessionStatusInput: document.getElementById("sessionStatusInput"),
   participantCount: document.getElementById("participantCount"),
   applyCountBtn: document.getElementById("applyCountBtn"),
@@ -77,9 +84,19 @@ let positions = [];
 let sessionsData = { session: [] };
 let playersData = { session: [] };
 let gainsSplit = null;
+let eliminationOrderCounter = 0;
 const editSessionId = new URLSearchParams(window.location.search).get("editSessionId");
 const BUYIN_UNIT_EUR = 10;
 const MAX_BUYINS_PER_PLAYER = 3;
+const CHIP_COLORS = ["orange", "black", "green", "yellow", "red", "white"];
+const CHIP_COLOR_LABELS = {
+  orange: "orange",
+  black: "noir",
+  green: "vert",
+  yellow: "jaune",
+  red: "rouge",
+  white: "blanc"
+};
 
 function updateGainsButtonLabel() {
   const base = "Repartir les gains";
@@ -102,6 +119,51 @@ function parseMoney(value) {
   const normalized = String(value || "").trim().replace(",", ".");
   const n = Number(normalized);
   return Number.isFinite(n) ? n : 0;
+}
+
+function parseChipValuesFromInputs() {
+  const out = {};
+  for (const color of CHIP_COLORS) {
+    const input = refs.chipValueInputs?.[color];
+    const rawValue = String(input?.value || "").trim();
+    if (!rawValue) {
+      out[color] = null;
+      continue;
+    }
+    const value = parseMoney(rawValue);
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(`La valeur du jeton ${CHIP_COLOR_LABELS[color]} doit etre un nombre positif.`);
+    }
+    out[color] = value;
+  }
+  return out;
+}
+
+function normalizeApiChipValue(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getChipValuesFromApiSession(session = {}) {
+  const legacyValue = normalizeApiChipValue(session.chip_value);
+  return {
+    orange: normalizeApiChipValue(session.chip_value_orange) ?? legacyValue,
+    black: normalizeApiChipValue(session.chip_value_black) ?? legacyValue,
+    green: normalizeApiChipValue(session.chip_value_green) ?? legacyValue,
+    yellow: normalizeApiChipValue(session.chip_value_yellow) ?? legacyValue,
+    red: normalizeApiChipValue(session.chip_value_red) ?? legacyValue,
+    white: normalizeApiChipValue(session.chip_value_white) ?? legacyValue
+  };
+}
+
+function setChipValuesInInputs(chipValues = {}) {
+  for (const color of CHIP_COLORS) {
+    const input = refs.chipValueInputs?.[color];
+    if (!(input instanceof HTMLInputElement)) continue;
+    const value = chipValues[color];
+    input.value = value == null ? "" : String(value);
+  }
 }
 
 function normalizeMiseAmount(value) {
@@ -247,6 +309,7 @@ function addRow(prefill = {}) {
 
 function setParticipantRows(count) {
   const n = Math.max(1, Number(count) || 1);
+  eliminationOrderCounter = 0;
   refs.tbody.innerHTML = "";
   for (let i = 0; i < n; i += 1) addRow();
   enforceUniqueSelections();
@@ -312,8 +375,120 @@ function rankByPositionId(positionId) {
   return hit ? Number(hit.rang) : null;
 }
 
+function getPositionIdByRank(rank) {
+  const hit = positions.find((p) => Number(p.rang) === Number(rank));
+  return hit ? String(hit.id) : null;
+}
+
 function getSortedPositionDefs() {
   return [...positions].sort((a, b) => Number(a.rang) - Number(b.rang));
+}
+
+function getRowEliminationOrder(row) {
+  const n = Number(row?.dataset?.eliminationOrder || 0);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function setRowEliminationOrder(row, value) {
+  if (!row) return;
+  if (!Number.isInteger(value) || value <= 0) {
+    delete row.dataset.eliminationOrder;
+    return;
+  }
+  row.dataset.eliminationOrder = String(value);
+}
+
+function assignPositionsFromEliminationOrder() {
+  const rows = [...refs.tbody.querySelectorAll("tr")];
+  if (rows.length === 0) return;
+
+  const rowCount = rows.length;
+  for (const row of rows) {
+    const eliminated = row.querySelector(".p-eliminated")?.checked === true;
+    row.dataset.eliminated = eliminated ? "1" : "0";
+    if (eliminated && !getRowEliminationOrder(row)) {
+      eliminationOrderCounter += 1;
+      setRowEliminationOrder(row, eliminationOrderCounter);
+    }
+    if (!eliminated) {
+      setRowEliminationOrder(row, null);
+    }
+  }
+
+  const eliminatedRows = rows
+    .filter((row) => row.querySelector(".p-eliminated")?.checked)
+    .sort((a, b) => (getRowEliminationOrder(a) || 0) - (getRowEliminationOrder(b) || 0));
+
+  const desiredRankByRow = new Map();
+  eliminatedRows.forEach((row, index) => {
+    desiredRankByRow.set(row, rowCount - index);
+  });
+
+  const usedRanks = new Set();
+  for (const row of eliminatedRows) {
+    const rank = desiredRankByRow.get(row);
+    const positionId = getPositionIdByRank(rank);
+    const select = row.querySelector(".p-position");
+    if (positionId && select instanceof HTMLSelectElement) {
+      select.value = positionId;
+      usedRanks.add(rank);
+    }
+  }
+
+  const availableRanks = getSortedPositionDefs()
+    .map((p) => Number(p.rang))
+    .filter((rank) => rank >= 1 && rank <= rowCount)
+    .filter((rank) => !usedRanks.has(rank));
+
+  const nonEliminatedRows = rows.filter((row) => !desiredRankByRow.has(row));
+  const rowsNeedingPosition = [];
+  for (const row of nonEliminatedRows) {
+    const select = row.querySelector(".p-position");
+    const currentRank = rankByPositionId(String(select?.value || "").trim());
+    if (currentRank != null && currentRank >= 1 && currentRank <= rowCount && !usedRanks.has(currentRank)) {
+      usedRanks.add(currentRank);
+      continue;
+    }
+    rowsNeedingPosition.push(row);
+  }
+
+  const remainingRanks = availableRanks.filter((rank) => !usedRanks.has(rank));
+  rowsNeedingPosition.forEach((row, index) => {
+    const rank = remainingRanks[index];
+    const positionId = getPositionIdByRank(rank);
+    const select = row.querySelector(".p-position");
+    if (positionId && select instanceof HTMLSelectElement) {
+      select.value = positionId;
+      usedRanks.add(rank);
+    }
+  });
+
+  enforceUniqueSelections();
+  sortRowsByPosition();
+  recalculateDisplayedGains();
+}
+
+function initializeEliminationOrderFromPositions() {
+  const rows = [...refs.tbody.querySelectorAll("tr")];
+  const eliminatedRows = rows
+    .filter((row) => row.querySelector(".p-eliminated")?.checked)
+    .sort((a, b) => {
+      const ar = rankByPositionId(String(a.querySelector(".p-position")?.value || "").trim()) ?? -1;
+      const br = rankByPositionId(String(b.querySelector(".p-position")?.value || "").trim()) ?? -1;
+      return br - ar;
+    });
+
+  eliminatedRows.forEach((row, index) => {
+    row.dataset.eliminated = "1";
+    setRowEliminationOrder(row, index + 1);
+  });
+  rows
+    .filter((row) => !row.querySelector(".p-eliminated")?.checked)
+    .forEach((row) => {
+      row.dataset.eliminated = "0";
+      setRowEliminationOrder(row, null);
+    });
+  eliminationOrderCounter = eliminatedRows.length;
 }
 
 function applyPositionShift(changedSelect) {
@@ -478,11 +653,7 @@ function buildNewSession() {
     throw new Error("Le champ 10 € = stack doit etre un entier positif.");
   }
 
-  const rawChipValue = String(refs.chipValueInput?.value || "").trim();
-  const chipValue = rawChipValue ? parseMoney(rawChipValue) : null;
-  if (rawChipValue && (!Number.isFinite(chipValue) || chipValue <= 0)) {
-    throw new Error("La valeur d'un jeton doit etre un nombre positif.");
-  }
+  const chipValues = parseChipValuesFromInputs();
 
   const rows = [...refs.tbody.querySelectorAll("tr")];
   if (rows.length === 0) throw new Error("Ajoute au moins un participant.");
@@ -524,7 +695,7 @@ function buildNewSession() {
     name,
     is_closed: isClosed,
     stack_per_10_eur: stackPer10,
-    chip_value: chipValue,
+    chip_values: chipValues,
     participants
   };
 }
@@ -548,7 +719,7 @@ function buildStructuredSessionsFromApi(sessions, entries, buyins, payouts) {
       name: String(s.session_name || ""),
       is_closed: Boolean(Number(s.is_closed || 0)),
       stack_per_10_eur: s.stack_per_10_eur == null ? null : Number(s.stack_per_10_eur),
-      chip_value: s.chip_value == null ? null : Number(s.chip_value),
+      chip_values: getChipValuesFromApiSession(s),
       participants: []
     }])
   );
@@ -603,7 +774,7 @@ function applyEditModeIfNeeded() {
   refs.sessionName.value = String(target.name || `Poker ${target.id || ""}`);
   refs.sessionStatusInput.value = target.is_closed ? "closed" : "open";
   refs.stackPer10Input.value = target.stack_per_10_eur == null ? "" : String(target.stack_per_10_eur);
-  refs.chipValueInput.value = target.chip_value == null ? "" : String(target.chip_value);
+  setChipValuesInInputs(target.chip_values || {});
   refs.participantCount.value = String(Math.max(1, (target.participants || []).length));
   refs.tbody.innerHTML = "";
 
@@ -613,6 +784,7 @@ function applyEditModeIfNeeded() {
     return ar - br;
   });
   for (const p of participants) addRow(p);
+  initializeEliminationOrderFromPositions();
 
   gainsSplit = target.is_closed ? inferGainsSplitFromSession(target) : null;
   recalculateDisplayedGains();
@@ -647,7 +819,12 @@ async function saveSessionJson() {
       session_name: newSession.name,
       is_closed: newSession.is_closed ? 1 : 0,
       stack_per_10_eur: newSession.stack_per_10_eur,
-      chip_value: newSession.chip_value
+      chip_value_orange: newSession.chip_values.orange,
+      chip_value_black: newSession.chip_values.black,
+      chip_value_green: newSession.chip_values.green,
+      chip_value_yellow: newSession.chip_values.yellow,
+      chip_value_red: newSession.chip_values.red,
+      chip_value_white: newSession.chip_values.white
     })
   });
 
@@ -725,14 +902,17 @@ async function loadData() {
     refs.sessionName.value = `Poker ${maxSessionId + 1}`;
     refs.sessionStatusInput.value = "open";
     refs.stackPer10Input.value = "";
-    refs.chipValueInput.value = "";
+    setChipValuesInInputs({});
     setParticipantRows(Number(refs.participantCount?.value || 8));
     updateGainsButtonLabel();
     updateGainsPoolInfo();
   }
 }
 
-refs.addRowBtn.addEventListener("click", () => addRow());
+refs.addRowBtn.addEventListener("click", () => {
+  addRow();
+  assignPositionsFromEliminationOrder();
+});
 refs.applyCountBtn.addEventListener("click", () => {
   setParticipantRows(Number(refs.participantCount?.value || 1));
 });
@@ -792,9 +972,7 @@ refs.tbody.addEventListener("click", (e) => {
   if (!(e.target instanceof HTMLElement)) return;
   if (e.target.classList.contains("removeRow")) {
     e.target.closest("tr")?.remove();
-    enforceUniqueSelections();
-    sortRowsByPosition();
-    recalculateDisplayedGains();
+    assignPositionsFromEliminationOrder();
     updateGainsPoolInfo();
   }
 });
@@ -813,8 +991,7 @@ refs.tbody.addEventListener("change", (e) => {
     updateGainsButtonLabel();
   }
   if (e.target.classList.contains("p-eliminated")) {
-    const row = e.target.closest("tr");
-    if (row) row.dataset.eliminated = e.target.checked ? "1" : "0";
+    assignPositionsFromEliminationOrder();
   }
   if (e.target.classList.contains("p-mise") && refs.gainsModal.style.display === "flex") {
     buildGainSelectOptions();
