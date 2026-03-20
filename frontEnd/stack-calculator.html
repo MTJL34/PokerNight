@@ -14,6 +14,7 @@
         <h1>Calculateur de stack</h1>
         <div class="panel__actions">
           <a class="btn btnLink" href="./home.html">Accueil</a>
+          <button id="validateBtn" class="btn" type="button">Valider le calcul</button>
           <button id="resetBtn" class="btn" type="button">Réinitialiser</button>
         </div>
       </div>
@@ -26,6 +27,17 @@
           <span>Montant de la blinde</span>
           <input id="blindAmountInput" type="number" min="0" step="1" placeholder="Ex: 200" />
         </label>
+        <label class="field">
+          <span>Joueur (session en cours)</span>
+          <select id="ongoingPlayerSelect">
+            <option value="">Chargement...</option>
+          </select>
+        </label>
+      </div>
+      <div class="panel__body panel__body--status">
+        <p id="ongoingSessionInfo" class="status">Chargement de la session en cours...</p>
+        <p id="ongoingPlayerReminder" class="status">Sélectionne un joueur pour voir son rappel de stack.</p>
+        <p id="validationStatus" class="status">Aucun calcul validé pour le moment.</p>
       </div>
     </section>
 
@@ -116,6 +128,6 @@
     </section>
   </main>
 
-  <script type="module" src="./scripts/stack-calculator.js?v=20260320-2"></script>
+  <script type="module" src="./scripts/stack-calculator.js?v=20260320-3"></script>
 </body>
 </html>

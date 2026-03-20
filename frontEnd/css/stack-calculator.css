@@ -65,6 +65,12 @@ body{
   gap:10px;
 }
 
+.panel__body--status{
+  display:grid;
+  gap:8px;
+  border-top:1px solid rgba(45,90,67,.7);
+}
+
 h1,h2{
   margin:0;
   letter-spacing:.3px;
@@ -92,7 +98,23 @@ input{
   outline:none;
 }
 
+select{
+  width:100%;
+  padding:10px 11px;
+  font-size:16px;
+  border-radius:12px;
+  border:1px solid var(--line);
+  background:rgba(5,17,12,.55);
+  color:var(--text);
+  outline:none;
+}
+
 input:focus{
+  border-color:rgba(224,180,91,.75);
+  box-shadow:0 0 0 3px rgba(224,180,91,.18);
+}
+
+select:focus{
   border-color:rgba(224,180,91,.75);
   box-shadow:0 0 0 3px rgba(224,180,91,.18);
 }
@@ -236,7 +258,7 @@ tfoot th:first-child{
 
   .panel__actions{
     width:auto;
-    grid-template-columns:auto auto;
+    grid-template-columns:auto auto auto;
   }
 
   .panel__body{
@@ -244,7 +266,7 @@ tfoot th:first-child{
   }
 
   .panel__body--top{
-    grid-template-columns:1fr 1fr;
+    grid-template-columns:repeat(3, minmax(0, 1fr));
   }
 
   .cards{
