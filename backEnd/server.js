@@ -129,6 +129,8 @@ async function ensureSchemaUpgrades() {
         current_stack DECIMAL(14,4) NOT NULL DEFAULT 0,
         blind_amount DECIMAL(14,4) NULL,
         blinds_remaining_exact DECIMAL(14,6) NULL,
+        chip_values_json LONGTEXT NULL,
+        chip_counts_json LONGTEXT NULL,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (session_id, player_id),
         CONSTRAINT fk_live_stack_entry
@@ -137,6 +139,12 @@ async function ensureSchemaUpgrades() {
           ON DELETE CASCADE
       )
     `);
+  }
+  if (!(await hasColumn("session_live_stacks", "chip_values_json"))) {
+    await db.query("ALTER TABLE session_live_stacks ADD COLUMN chip_values_json LONGTEXT NULL");
+  }
+  if (!(await hasColumn("session_live_stacks", "chip_counts_json"))) {
+    await db.query("ALTER TABLE session_live_stacks ADD COLUMN chip_counts_json LONGTEXT NULL");
   }
 
   await db.query(`

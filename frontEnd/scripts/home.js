@@ -44,6 +44,7 @@ const els = {
   importBtn: document.getElementById("importBtn"),
   exportBtn: document.getElementById("exportBtn"),
   importInput: document.getElementById("importInput"),
+  stackCalculatorBtn: document.getElementById("stackCalculatorBtn"),
   statsCards: document.getElementById("statsCards"),
   leaderboard: document.getElementById("leaderboard"),
   leaderboardMeta: document.getElementById("leaderboardMeta"),
@@ -124,6 +125,20 @@ function buildSessionLabel(sessionId, fallbackName = "") {
   return isSessionOngoingById(sid) ? `${base} (en cours)` : base;
 }
 
+function updateStackCalculatorLink() {
+  if (!(els.stackCalculatorBtn instanceof HTMLAnchorElement)) return;
+
+  const selectedSessionId = String(els.sessionSelect?.value || "").trim();
+  const candidateIds = selectedSessionId
+    ? [selectedSessionId]
+    : [...sessionMetaById.keys()].sort(compareSessionIdsWithOngoingFirst);
+  const targetSessionId = String(candidateIds[0] || "").trim();
+
+  els.stackCalculatorBtn.href = targetSessionId
+    ? `./stack-calculator.html?session_id=${encodeURIComponent(targetSessionId)}`
+    : "./stack-calculator.html";
+}
+
 function parsePositiveInt(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
@@ -175,6 +190,7 @@ function buildSessionSelect() {
   if (!isSessionRows()) {
     els.sessionField.classList.add("isHidden");
     els.sessionSelect.innerHTML = "";
+    updateStackCalculatorLink();
     return;
   }
 
@@ -202,6 +218,7 @@ function buildSessionSelect() {
   } else {
     els.sessionSelect.value = "";
   }
+  updateStackCalculatorLink();
 }
 
 function inferPokerColumns() {
@@ -1379,7 +1396,12 @@ async function importDatasetFromFile(file) {
 }
 
 if (els.searchInput) els.searchInput.addEventListener("input", applyFilters);
-if (els.sessionSelect) els.sessionSelect.addEventListener("change", applyFilters);
+if (els.sessionSelect) {
+  els.sessionSelect.addEventListener("change", () => {
+    applyFilters();
+    updateStackCalculatorLink();
+  });
+}
 if (els.datasetSelect) {
   els.datasetSelect.addEventListener("change", () => {
     loadData(els.datasetSelect.value);

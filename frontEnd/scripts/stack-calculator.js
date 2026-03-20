@@ -8,6 +8,8 @@ const CHIP_CONFIG = [
   { key: "white", label: "blanc", defaultValue: 10000 }
 ];
 
+const LOCAL_DRAFTS_STORAGE = "poker_live_stack_drafts_v2";
+
 const isLocalhost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
 const API_BASES = window.location.origin?.startsWith("http")
   ? (isLocalhost ? ["", "http://localhost:8000"] : [""])
@@ -15,6 +17,8 @@ const API_BASES = window.location.origin?.startsWith("http")
 const ADMIN_KEY_STORAGE = "poker_admin_key";
 const ADMIN_DEFAULT_KEY = "poker_admin_local";
 const ADMIN_CODE_STORAGE = "poker_admin_code";
+
+const preferredSessionIdFromUrl = String(new URLSearchParams(window.location.search).get("session_id") || "").trim();
 
 const els = {
   playerNameInput: document.getElementById("playerNameInput"),
@@ -33,12 +37,15 @@ const els = {
 };
 
 const state = {
+  preferredSessionId: preferredSessionIdFromUrl,
   ongoingSession: null,
   ongoingPlayers: [],
   selectedOngoingPlayerId: "",
   liveStacksByPlayerId: new Map(),
   lastSavedSignatureByPlayerId: new Map(),
-  autoSaveTimer: null
+  draftByPlayerId: new Map(),
+  autoSaveTimer: null,
+  pendingAutoSavePayload: null
 };
 
 const chipRefs = CHIP_CONFIG.map((chip) => ({
@@ -59,6 +66,12 @@ function parseAmount(value) {
   if (!normalized) return null;
   const n = Number(normalized);
   return Number.isFinite(n) ? n : null;
+}
+
+function parseNonNegativeNumber(value, { integer = false } = {}) {
+  const n = parseAmount(value);
+  if (n == null || n < 0) return null;
+  return integer ? Math.floor(n) : n;
 }
 
 function readNonNegativeNumber(input, { integer = false } = {}) {
@@ -106,68 +119,262 @@ function compareSessionIdsDesc(a, b) {
   return String(b).localeCompare(String(a), "fr", { numeric: true, sensitivity: "base" });
 }
 
-function buildLiveStackSignature(currentStack, blindAmount, blindsRemainingExact) {
-  return [
-    toFixedOrEmpty(currentStack, 4),
-    toFixedOrEmpty(blindAmount, 4),
-    toFixedOrEmpty(blindsRemainingExact, 6)
-  ].join("|");
-}
-
 function setValidationStatus(text) {
   if (!els.validationStatus) return;
   els.validationStatus.textContent = text;
 }
 
-async function apiFetch(path, options = {}) {
-  const method = String(options.method || "GET").toUpperCase();
-  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+function sanitizeChipObject(raw, { integer = false } = {}) {
+  if (raw == null || raw === "") return null;
 
-  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
-    const savedKey = String(sessionStorage.getItem(ADMIN_KEY_STORAGE) || "").trim();
-    const enteredKey = String(headers["x-admin-key"] || savedKey || ADMIN_DEFAULT_KEY || "").trim();
-    sessionStorage.setItem(ADMIN_KEY_STORAGE, enteredKey);
-    headers["x-admin-key"] = enteredKey;
-
-    const savedCode = String(sessionStorage.getItem(ADMIN_CODE_STORAGE) || "").trim();
-    const enteredCode = String(headers["x-admin-code"] || savedCode || window.prompt("Entrez le code admin (4 chiffres) :") || "").trim();
-    if (!/^\d{4}$/.test(enteredCode)) {
-      throw new Error("Admin confirmation code must be exactly 4 digits");
-    }
-    sessionStorage.setItem(ADMIN_CODE_STORAGE, enteredCode);
-    headers["x-admin-code"] = enteredCode;
-  }
-
-  let lastNetworkError = null;
-  let lastApiError = null;
-  for (const base of API_BASES) {
+  let parsed = raw;
+  if (typeof parsed === "string") {
     try {
-      const res = await fetch(`${base}${path}`, {
-        headers,
-        ...options
-      });
-      if (!res.ok) {
-        let detail = "";
-        try {
-          const body = await res.json();
-          detail = body?.detail || body?.message || "";
-        } catch {
-          // ignore parse errors
-        }
-        if (res.status === 401 || res.status === 403) {
-          sessionStorage.removeItem(ADMIN_KEY_STORAGE);
-          sessionStorage.removeItem(ADMIN_CODE_STORAGE);
-        }
-        lastApiError = lastApiError || new Error(`API ${res.status}${detail ? `: ${detail}` : ""}`);
-        continue;
-      }
-      const text = await res.text();
-      return text ? JSON.parse(text) : null;
-    } catch (err) {
-      lastNetworkError = err;
+      parsed = JSON.parse(parsed);
+    } catch {
+      return null;
     }
   }
-  throw lastApiError || lastNetworkError || new Error("API unreachable");
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+
+  const out = {};
+  for (const chip of CHIP_CONFIG) {
+    const candidate = parseNonNegativeNumber(parsed[chip.key], { integer });
+    if (candidate != null) {
+      out[chip.key] = candidate;
+    }
+  }
+
+  return Object.keys(out).length ? out : null;
+}
+
+function serializeChipObjectForSignature(raw, { integer = false } = {}) {
+  const normalized = sanitizeChipObject(raw, { integer }) || {};
+  const out = {};
+  for (const chip of CHIP_CONFIG) {
+    const value = normalized[chip.key];
+    if (value == null) continue;
+    out[chip.key] = integer ? Math.floor(value) : Number(value);
+  }
+  return JSON.stringify(out);
+}
+
+function buildPayloadSignature(payload) {
+  if (!payload) return "";
+  return [
+    String(payload.session_id || ""),
+    String(payload.player_id || ""),
+    toFixedOrEmpty(payload.current_stack, 4),
+    toFixedOrEmpty(payload.blind_amount, 4),
+    toFixedOrEmpty(payload.blinds_remaining_exact, 6),
+    serializeChipObjectForSignature(payload.chip_values_json, { integer: false }),
+    serializeChipObjectForSignature(payload.chip_counts_json, { integer: true })
+  ].join("|");
+}
+
+function buildStorageCompositeKey(sessionId, playerId) {
+  return `${String(sessionId || "").trim()}|${String(playerId || "").trim()}`;
+}
+
+function readDraftStorageMap() {
+  try {
+    const raw = localStorage.getItem(LOCAL_DRAFTS_STORAGE);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDraftStorageMap(storageMap) {
+  try {
+    localStorage.setItem(LOCAL_DRAFTS_STORAGE, JSON.stringify(storageMap || {}));
+  } catch {
+    // ignore localStorage errors
+  }
+}
+
+function sanitizeNumericDraftValue(value, { integer = false, fallback = "" } = {}) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return fallback;
+  const n = parseNonNegativeNumber(trimmed, { integer });
+  if (n == null) return fallback;
+  return String(n);
+}
+
+function createDefaultDraft(playerName = "") {
+  const draft = {
+    playerName: String(playerName || "").trim(),
+    blindAmount: "",
+    chipValues: {},
+    chipCounts: {}
+  };
+  for (const chip of CHIP_CONFIG) {
+    draft.chipValues[chip.key] = "";
+    draft.chipCounts[chip.key] = "0";
+  }
+  return draft;
+}
+
+function normalizeDraft(draft, fallbackPlayerName = "") {
+  const out = createDefaultDraft(fallbackPlayerName);
+  if (!draft || typeof draft !== "object") return out;
+
+  const playerName = String(draft.playerName || fallbackPlayerName || "").trim();
+  out.playerName = playerName;
+  out.blindAmount = sanitizeNumericDraftValue(draft.blindAmount, { integer: false, fallback: "" });
+
+  for (const chip of CHIP_CONFIG) {
+    out.chipValues[chip.key] = sanitizeNumericDraftValue(draft?.chipValues?.[chip.key], {
+      integer: false,
+      fallback: ""
+    });
+    out.chipCounts[chip.key] = sanitizeNumericDraftValue(draft?.chipCounts?.[chip.key], {
+      integer: true,
+      fallback: "0"
+    });
+  }
+
+  return out;
+}
+
+function buildDraftFromCurrentInputs() {
+  const selectedPlayer = getSelectedOngoingPlayer();
+  const draft = createDefaultDraft(selectedPlayer?.playerName || "");
+
+  draft.playerName = String(els.playerNameInput?.value || selectedPlayer?.playerName || "").trim();
+  draft.blindAmount = String(els.blindAmountInput?.value || "").trim();
+
+  for (const chip of chipRefs) {
+    draft.chipValues[chip.key] = String(chip.valueInput?.value || "").trim();
+    draft.chipCounts[chip.key] = String(chip.countInput?.value || "0").trim();
+  }
+
+  return normalizeDraft(draft, selectedPlayer?.playerName || "");
+}
+
+function buildDraftFromSavedPlayer(player) {
+  const base = createDefaultDraft(player?.playerName || "");
+  if (!player) return base;
+
+  if (player.savedBlindAmount != null && Number(player.savedBlindAmount) > 0) {
+    base.blindAmount = String(Number(player.savedBlindAmount));
+  }
+
+  const savedValues = sanitizeChipObject(player.savedChipValues) || {};
+  const savedCounts = sanitizeChipObject(player.savedChipCounts, { integer: true }) || {};
+
+  for (const chip of CHIP_CONFIG) {
+    if (savedValues[chip.key] != null) {
+      base.chipValues[chip.key] = String(savedValues[chip.key]);
+    }
+    if (savedCounts[chip.key] != null) {
+      base.chipCounts[chip.key] = String(savedCounts[chip.key]);
+    }
+  }
+
+  return normalizeDraft(base, player.playerName || "");
+}
+
+function readDraftFromStorage(sessionId, playerId, fallbackPlayerName = "") {
+  if (!sessionId || !playerId) return null;
+  const map = readDraftStorageMap();
+  const key = buildStorageCompositeKey(sessionId, playerId);
+  if (!(key in map)) return null;
+  return normalizeDraft(map[key], fallbackPlayerName);
+}
+
+function writeDraftToStorage(sessionId, playerId, draft, fallbackPlayerName = "") {
+  if (!sessionId || !playerId) return;
+  const map = readDraftStorageMap();
+  const key = buildStorageCompositeKey(sessionId, playerId);
+  map[key] = normalizeDraft(draft, fallbackPlayerName);
+  writeDraftStorageMap(map);
+}
+
+function getSelectedOngoingPlayer() {
+  const id = String(state.selectedOngoingPlayerId || "").trim();
+  if (!id) return null;
+  return state.ongoingPlayers.find((p) => p.playerId === id) || null;
+}
+
+function getPlayerById(playerId) {
+  const pid = String(playerId || "").trim();
+  if (!pid) return null;
+  return state.ongoingPlayers.find((p) => p.playerId === pid) || null;
+}
+
+function storeDraftForPlayer(playerId, draft) {
+  const session = state.ongoingSession;
+  const player = getPlayerById(playerId);
+  if (!session || !player) return;
+  const normalized = normalizeDraft(draft, player.playerName || "");
+  state.draftByPlayerId.set(player.playerId, normalized);
+  writeDraftToStorage(session.id, player.playerId, normalized, player.playerName || "");
+}
+
+function storeCurrentDraftForSelectedPlayer() {
+  const selected = getSelectedOngoingPlayer();
+  if (!selected) return;
+  storeDraftForPlayer(selected.playerId, buildDraftFromCurrentInputs());
+}
+
+function getDraftForPlayer(player) {
+  if (!player) return createDefaultDraft("");
+  const session = state.ongoingSession;
+  if (!session) return createDefaultDraft(player.playerName || "");
+
+  const inMemory = state.draftByPlayerId.get(player.playerId);
+  if (inMemory) return normalizeDraft(inMemory, player.playerName || "");
+
+  const fromStorage = readDraftFromStorage(session.id, player.playerId, player.playerName || "");
+  if (fromStorage) {
+    state.draftByPlayerId.set(player.playerId, fromStorage);
+    return fromStorage;
+  }
+
+  const fromSaved = buildDraftFromSavedPlayer(player);
+  state.draftByPlayerId.set(player.playerId, fromSaved);
+  writeDraftToStorage(session.id, player.playerId, fromSaved, player.playerName || "");
+  return fromSaved;
+}
+
+function applyDraftToInputs(draft, { forcePlayerName = "" } = {}) {
+  const normalized = normalizeDraft(draft, forcePlayerName || "");
+
+  for (const chip of chipRefs) {
+    if (chip.valueInput instanceof HTMLInputElement) {
+      chip.valueInput.value = normalized.chipValues[chip.key] || "";
+      chip.valueInput.placeholder = String(chip.defaultValue);
+    }
+    if (chip.countInput instanceof HTMLInputElement) {
+      chip.countInput.value = normalized.chipCounts[chip.key] || "0";
+    }
+  }
+
+  if (els.blindAmountInput instanceof HTMLInputElement) {
+    els.blindAmountInput.value = normalized.blindAmount || "";
+  }
+
+  if (els.playerNameInput instanceof HTMLInputElement) {
+    els.playerNameInput.value = String(forcePlayerName || normalized.playerName || "").trim();
+  }
+}
+
+function applySelectedPlayerDraft() {
+  const selected = getSelectedOngoingPlayer();
+  if (!selected) {
+    applyDefaults();
+    if (els.playerNameInput instanceof HTMLInputElement) {
+      els.playerNameInput.value = "";
+    }
+    return;
+  }
+
+  const draft = getDraftForPlayer(selected);
+  applyDraftToInputs(draft, { forcePlayerName: selected.playerName });
 }
 
 function applyDefaults() {
@@ -188,10 +395,19 @@ function applyDefaults() {
   }
 }
 
-function getSelectedOngoingPlayer() {
-  const id = String(state.selectedOngoingPlayerId || "").trim();
-  if (!id) return null;
-  return state.ongoingPlayers.find((p) => p.playerId === id) || null;
+function readChipPayloadFromInputs() {
+  const chipValues = {};
+  const chipCounts = {};
+
+  for (const chip of chipRefs) {
+    chipValues[chip.key] = readNonNegativeNumberWithDefault(chip.valueInput, chip.defaultValue);
+    chipCounts[chip.key] = readNonNegativeNumber(chip.countInput, { integer: true });
+  }
+
+  return {
+    chipValues,
+    chipCounts
+  };
 }
 
 function updateOngoingPlayerReminder() {
@@ -199,7 +415,7 @@ function updateOngoingPlayerReminder() {
 
   const session = state.ongoingSession;
   if (!session) {
-    els.ongoingPlayerReminder.textContent = "Aucune session en cours détectée.";
+    els.ongoingPlayerReminder.textContent = "Aucune session active détectée.";
     return;
   }
 
@@ -215,15 +431,21 @@ function updateOngoingPlayerReminder() {
   chunks.push(`Stack de rappel: ${formatNumber(player.referenceStack, 0)} (10 € = ${formatNumber(session.stackPer10, 0)})`);
 
   if (player.savedCurrentStack != null) {
-    chunks.push(`Stack sauvegardé: ${formatNumber(player.savedCurrentStack, 0)}`);
+    chunks.push(`Stack live: ${formatNumber(player.savedCurrentStack, 0)}`);
   } else {
-    chunks.push("Aucun stack sauvegardé");
+    chunks.push("Aucun stack live sauvegardé");
   }
-  if (player.savedBlindAmount != null && player.savedBlindAmount > 0) {
-    chunks.push(`Blinde sauvegardée: ${formatNumber(player.savedBlindAmount, 0)}`);
+
+  if (player.savedBlindAmount != null && Number(player.savedBlindAmount) > 0) {
+    chunks.push(`Blinde live: ${formatNumber(player.savedBlindAmount, 0)}`);
   }
+
   if (player.savedBlindsRemainingExact != null) {
-    chunks.push(`Blindes sauvegardées: ${formatTrimmed(player.savedBlindsRemainingExact, 2)}`);
+    chunks.push(`Blindes live: ${formatTrimmed(player.savedBlindsRemainingExact, 2)}`);
+  }
+
+  if (player.savedUpdatedAt) {
+    chunks.push(`Maj: ${String(player.savedUpdatedAt)}`);
   }
 
   els.ongoingPlayerReminder.textContent = chunks.join(" | ");
@@ -252,9 +474,7 @@ function updateCalculations() {
   const blindsFull = blindsExact == null ? null : Math.floor(blindsExact);
 
   const selectedPlayer = getSelectedOngoingPlayer();
-  const fallbackPlayerName = selectedPlayer?.playerName || "";
-  const typedPlayerName = String(els.playerNameInput?.value || "").trim();
-  const playerName = typedPlayerName || fallbackPlayerName;
+  const playerName = String(selectedPlayer?.playerName || els.playerNameInput?.value || "").trim();
   const playerPrefix = playerName ? `${playerName} : ` : "";
 
   if (els.stackTotalCell) {
@@ -292,12 +512,20 @@ function updateCalculations() {
   };
 }
 
-function updateSelectedPlayerSavedState(payload) {
-  const player = getSelectedOngoingPlayer();
+function updatePlayerSavedState(playerId, payload) {
+  const player = getPlayerById(playerId);
   if (!player) return;
+
   player.savedCurrentStack = payload.current_stack;
   player.savedBlindAmount = payload.blind_amount;
   player.savedBlindsRemainingExact = payload.blinds_remaining_exact;
+  player.savedChipValues = sanitizeChipObject(payload.chip_values_json) || null;
+  player.savedChipCounts = sanitizeChipObject(payload.chip_counts_json, { integer: true }) || null;
+  player.savedUpdatedAt = new Date().toLocaleTimeString("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
 }
 
 function getSavePayloadFromCurrentUI() {
@@ -306,6 +534,8 @@ function getSavePayloadFromCurrentUI() {
   if (!session || !player) return null;
 
   const calc = updateCalculations();
+  const chips = readChipPayloadFromInputs();
+
   const blindAmount = calc.blind > 0 ? calc.blind : null;
   const blindsRemainingExact = calc.blindsExact == null
     ? null
@@ -316,37 +546,87 @@ function getSavePayloadFromCurrentUI() {
     player_id: Number(player.playerId),
     current_stack: Number(calc.totalStack.toFixed(4)),
     blind_amount: blindAmount == null ? null : Number(blindAmount.toFixed(4)),
-    blinds_remaining_exact: blindsRemainingExact
+    blinds_remaining_exact: blindsRemainingExact,
+    chip_values_json: chips.chipValues,
+    chip_counts_json: chips.chipCounts
   };
 }
 
-function scheduleAutoSave() {
-  if (state.autoSaveTimer) {
-    window.clearTimeout(state.autoSaveTimer);
+async function apiFetch(path, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    const savedKey = String(sessionStorage.getItem(ADMIN_KEY_STORAGE) || "").trim();
+    const enteredKey = String(headers["x-admin-key"] || savedKey || ADMIN_DEFAULT_KEY || "").trim();
+    if (!enteredKey) {
+      throw new Error("Clé admin requise pour sauvegarder");
+    }
+    sessionStorage.setItem(ADMIN_KEY_STORAGE, enteredKey);
+    headers["x-admin-key"] = enteredKey;
+
+    const savedCode = String(sessionStorage.getItem(ADMIN_CODE_STORAGE) || "").trim();
+    const enteredCode = String(
+      headers["x-admin-code"] ||
+      savedCode ||
+      window.prompt("Entrez le code admin de confirmation :") ||
+      ""
+    ).trim();
+    if (!enteredCode) {
+      throw new Error("Code admin requis pour sauvegarder");
+    }
+    sessionStorage.setItem(ADMIN_CODE_STORAGE, enteredCode);
+    headers["x-admin-code"] = enteredCode;
   }
-  state.autoSaveTimer = window.setTimeout(() => {
-    saveSelectedPlayerLiveStack({ manual: false }).catch((err) => {
-      setValidationStatus(`Sauvegarde auto impossible (${String(err?.message || "erreur")})`);
-    });
-  }, 700);
+
+  let lastNetworkError = null;
+  let lastApiError = null;
+  for (const base of API_BASES) {
+    try {
+      const res = await fetch(`${base}${path}`, {
+        headers,
+        ...options
+      });
+      if (!res.ok) {
+        let detail = "";
+        try {
+          const body = await res.json();
+          detail = body?.detail || body?.message || "";
+        } catch {
+          // ignore parse errors
+        }
+        if (res.status === 401 || res.status === 403) {
+          sessionStorage.removeItem(ADMIN_KEY_STORAGE);
+          sessionStorage.removeItem(ADMIN_CODE_STORAGE);
+        }
+        lastApiError = lastApiError || new Error(`API ${res.status}${detail ? `: ${detail}` : ""}`);
+        continue;
+      }
+      const text = await res.text();
+      return text ? JSON.parse(text) : null;
+    } catch (err) {
+      lastNetworkError = err;
+    }
+  }
+
+  throw lastApiError || lastNetworkError || new Error("API unreachable");
 }
 
-async function saveSelectedPlayerLiveStack({ manual = false } = {}) {
-  const payload = getSavePayloadFromCurrentUI();
-  const selectedPlayer = getSelectedOngoingPlayer();
-  if (!payload || !selectedPlayer) {
-    if (manual) setValidationStatus("Impossible de sauvegarder: sélectionne un joueur de la session en cours.");
-    return { saved: false, reason: "missing-context" };
+async function saveLiveStackPayload(payload, { manual = false } = {}) {
+  if (!payload) {
+    if (manual) setValidationStatus("Impossible de sauvegarder: joueur de session active non sélectionné.");
+    return { saved: false, reason: "missing-payload" };
   }
 
-  const signature = buildLiveStackSignature(
-    payload.current_stack,
-    payload.blind_amount,
-    payload.blinds_remaining_exact
-  );
-  const playerKey = String(payload.player_id);
+  const playerKey = String(payload.player_id || "").trim();
+  if (!playerKey) {
+    if (manual) setValidationStatus("Impossible de sauvegarder: joueur de session active non sélectionné.");
+    return { saved: false, reason: "missing-player" };
+  }
+
+  const signature = buildPayloadSignature(payload);
   const lastSignature = state.lastSavedSignatureByPlayerId.get(playerKey);
-  if (!manual && signature === lastSignature) {
+  if (!manual && signature && signature === lastSignature) {
     return { saved: false, reason: "unchanged" };
   }
 
@@ -359,20 +639,79 @@ async function saveSelectedPlayerLiveStack({ manual = false } = {}) {
   state.liveStacksByPlayerId.set(playerKey, {
     current_stack: payload.current_stack,
     blind_amount: payload.blind_amount,
-    blinds_remaining_exact: payload.blinds_remaining_exact
+    blinds_remaining_exact: payload.blinds_remaining_exact,
+    chip_values_json: sanitizeChipObject(payload.chip_values_json) || null,
+    chip_counts_json: sanitizeChipObject(payload.chip_counts_json, { integer: true }) || null
   });
-  updateSelectedPlayerSavedState(payload);
-  updateOngoingPlayerReminder();
+  updatePlayerSavedState(playerKey, payload);
+
+  const selected = getSelectedOngoingPlayer();
+  if (selected && selected.playerId === playerKey) {
+    updateOngoingPlayerReminder();
+  }
 
   if (manual) {
-    const delta = payload.current_stack - Number(selectedPlayer.referenceStack || 0);
+    const targetPlayer = getPlayerById(playerKey);
+    const reference = Number(targetPlayer?.referenceStack || 0);
+    const delta = payload.current_stack - reference;
     const deltaSign = delta > 0 ? "+" : "";
     setValidationStatus(
-      `Sauvegardé pour ${selectedPlayer.playerName}: ${formatNumber(payload.current_stack, 0)} | Écart vs rappel session: ${deltaSign}${formatNumber(delta, 0)}`
+      `Sauvegardé pour ${targetPlayer?.playerName || playerKey}: ${formatNumber(payload.current_stack, 0)} | Écart vs rappel session: ${deltaSign}${formatNumber(delta, 0)}`
     );
   }
 
   return { saved: true, payload };
+}
+
+function clearPendingAutoSave() {
+  if (state.autoSaveTimer) {
+    window.clearTimeout(state.autoSaveTimer);
+    state.autoSaveTimer = null;
+  }
+}
+
+async function flushPendingAutoSave() {
+  const pending = state.pendingAutoSavePayload;
+  clearPendingAutoSave();
+  state.pendingAutoSavePayload = null;
+  if (!pending) return;
+
+  try {
+    await saveLiveStackPayload(pending, { manual: false });
+  } catch (err) {
+    setValidationStatus(`Sauvegarde auto impossible (${String(err?.message || "erreur")})`);
+  }
+}
+
+function scheduleAutoSave() {
+  const payload = getSavePayloadFromCurrentUI();
+  if (!payload) {
+    clearPendingAutoSave();
+    state.pendingAutoSavePayload = null;
+    return;
+  }
+
+  const playerKey = String(payload.player_id || "").trim();
+  const signature = buildPayloadSignature(payload);
+  const lastSignature = state.lastSavedSignatureByPlayerId.get(playerKey);
+  if (signature && signature === lastSignature) {
+    clearPendingAutoSave();
+    state.pendingAutoSavePayload = null;
+    return;
+  }
+
+  clearPendingAutoSave();
+  state.pendingAutoSavePayload = payload;
+  state.autoSaveTimer = window.setTimeout(() => {
+    const current = state.pendingAutoSavePayload;
+    state.pendingAutoSavePayload = null;
+    state.autoSaveTimer = null;
+    if (!current) return;
+
+    saveLiveStackPayload(current, { manual: false }).catch((err) => {
+      setValidationStatus(`Sauvegarde auto impossible (${String(err?.message || "erreur")})`);
+    });
+  }, 700);
 }
 
 function updateOngoingPlayerOptions() {
@@ -405,21 +744,40 @@ function updateOngoingPlayerOptions() {
   }
 }
 
-function applySelectedPlayerDefaultsFromSaved() {
-  const selected = getSelectedOngoingPlayer();
-  if (!selected) return;
+function pickTargetSession(sessions) {
+  if (!sessions.length) return null;
 
-  if (els.playerNameInput instanceof HTMLInputElement && !String(els.playerNameInput.value || "").trim()) {
-    els.playerNameInput.value = selected.playerName;
+  const preferred = String(state.preferredSessionId || "").trim();
+  if (preferred) {
+    const matchingPreferred = sessions.find((s) => String(s.id) === preferred);
+    if (matchingPreferred) return matchingPreferred;
   }
-  if (els.blindAmountInput instanceof HTMLInputElement && !String(els.blindAmountInput.value || "").trim() && selected.savedBlindAmount != null) {
-    els.blindAmountInput.value = String(selected.savedBlindAmount);
-  }
+
+  const ongoing = sessions
+    .filter((s) => s.isOngoing)
+    .sort((a, b) => compareSessionIdsDesc(a.id, b.id));
+  if (ongoing.length) return ongoing[0];
+
+  return [...sessions].sort((a, b) => compareSessionIdsDesc(a.id, b.id))[0] || null;
+}
+
+function parseLiveStackRow(row) {
+  const chipValues = sanitizeChipObject(row?.chip_values_json) || null;
+  const chipCounts = sanitizeChipObject(row?.chip_counts_json, { integer: true }) || null;
+
+  return {
+    current_stack: row?.current_stack == null ? null : Number(row.current_stack),
+    blind_amount: row?.blind_amount == null ? null : Number(row.blind_amount),
+    blinds_remaining_exact: row?.blinds_remaining_exact == null ? null : Number(row.blinds_remaining_exact),
+    chip_values_json: chipValues,
+    chip_counts_json: chipCounts,
+    updated_at: row?.updated_at ? String(row.updated_at) : ""
+  };
 }
 
 async function loadOngoingSessionReminder() {
   if (els.ongoingSessionInfo) {
-    els.ongoingSessionInfo.textContent = "Chargement de la session en cours...";
+    els.ongoingSessionInfo.textContent = "Chargement de la session active...";
   }
 
   try {
@@ -452,7 +810,7 @@ async function loadOngoingSessionReminder() {
       payoutTotalsBySession.set(sid, (payoutTotalsBySession.get(sid) || 0) + Number(p.amount || 0));
     }
 
-    const ongoingSessions = (sessions || [])
+    const sessionsNormalized = (sessions || [])
       .map((s) => {
         const sid = String(s.session_id);
         const buyinTotal = Number(buyinTotalsBySession.get(sid) || 0);
@@ -469,42 +827,52 @@ async function loadOngoingSessionReminder() {
           isOngoing
         };
       })
-      .filter((s) => s.isOngoing)
       .sort((a, b) => compareSessionIdsDesc(a.id, b.id));
 
-    if (!ongoingSessions.length) {
+    const session = pickTargetSession(sessionsNormalized);
+    if (!session) {
       state.ongoingSession = null;
       state.ongoingPlayers = [];
       state.selectedOngoingPlayerId = "";
       state.liveStacksByPlayerId = new Map();
       state.lastSavedSignatureByPlayerId = new Map();
+      state.draftByPlayerId = new Map();
       updateOngoingPlayerOptions();
+      applyDefaults();
+      if (els.playerNameInput instanceof HTMLInputElement) {
+        els.playerNameInput.value = "";
+      }
       if (els.ongoingSessionInfo) {
-        els.ongoingSessionInfo.textContent = "Aucune session en cours trouvée.";
+        els.ongoingSessionInfo.textContent = "Aucune session détectée.";
       }
       updateOngoingPlayerReminder();
+      updateCalculations();
       return;
     }
 
-    const session = ongoingSessions[0];
     state.ongoingSession = session;
     if (els.ongoingSessionInfo) {
-      els.ongoingSessionInfo.textContent = `Session en cours: ${session.name} | Référence stack: 10 € = ${formatNumber(session.stackPer10, 0)}`;
+      const status = session.isOngoing ? "en cours" : "non marquée en cours";
+      els.ongoingSessionInfo.textContent = `Session active: ${session.name} (${status}) | Référence stack: 10 € = ${formatNumber(session.stackPer10, 0)}`;
     }
 
     const liveStacksRows = await apiFetch(`/api/live-stacks?session_id=${encodeURIComponent(session.id)}`);
     const liveByPlayerId = new Map(
-      (liveStacksRows || []).map((row) => [String(row.player_id), {
-        current_stack: row.current_stack == null ? null : Number(row.current_stack),
-        blind_amount: row.blind_amount == null ? null : Number(row.blind_amount),
-        blinds_remaining_exact: row.blinds_remaining_exact == null ? null : Number(row.blinds_remaining_exact)
-      }])
+      (liveStacksRows || []).map((row) => [String(row.player_id), parseLiveStackRow(row)])
     );
     state.liveStacksByPlayerId = liveByPlayerId;
     state.lastSavedSignatureByPlayerId = new Map(
       [...liveByPlayerId.entries()].map(([pid, value]) => [
         pid,
-        buildLiveStackSignature(value.current_stack, value.blind_amount, value.blinds_remaining_exact)
+        buildPayloadSignature({
+          session_id: Number(session.id),
+          player_id: Number(pid),
+          current_stack: value.current_stack,
+          blind_amount: value.blind_amount,
+          blinds_remaining_exact: value.blinds_remaining_exact,
+          chip_values_json: value.chip_values_json,
+          chip_counts_json: value.chip_counts_json
+        })
       ])
     );
 
@@ -523,61 +891,90 @@ async function loadOngoingSessionReminder() {
           referenceStack,
           savedCurrentStack: live.current_stack ?? null,
           savedBlindAmount: live.blind_amount ?? null,
-          savedBlindsRemainingExact: live.blinds_remaining_exact ?? null
+          savedBlindsRemainingExact: live.blinds_remaining_exact ?? null,
+          savedChipValues: live.chip_values_json ?? null,
+          savedChipCounts: live.chip_counts_json ?? null,
+          savedUpdatedAt: live.updated_at ? String(live.updated_at) : ""
         };
       })
       .sort((a, b) => a.playerName.localeCompare(b.playerName, "fr", { sensitivity: "base" }));
 
     state.ongoingPlayers = playersInSession;
+    state.draftByPlayerId = new Map();
+
     updateOngoingPlayerOptions();
-    applySelectedPlayerDefaultsFromSaved();
+    applySelectedPlayerDraft();
     updateOngoingPlayerReminder();
+    updateCalculations();
   } catch (err) {
     state.ongoingSession = null;
     state.ongoingPlayers = [];
     state.selectedOngoingPlayerId = "";
     state.liveStacksByPlayerId = new Map();
     state.lastSavedSignatureByPlayerId = new Map();
+    state.draftByPlayerId = new Map();
     updateOngoingPlayerOptions();
+    applyDefaults();
+    if (els.playerNameInput instanceof HTMLInputElement) {
+      els.playerNameInput.value = "";
+    }
     if (els.ongoingSessionInfo) {
-      els.ongoingSessionInfo.textContent = `Impossible de charger la session en cours (${String(err?.message || "erreur API")}).`;
+      els.ongoingSessionInfo.textContent = `Impossible de charger la session active (${String(err?.message || "erreur API")}).`;
     }
     updateOngoingPlayerReminder();
+    updateCalculations();
   }
 }
 
 function bindEvents() {
   for (const chip of chipRefs) {
     chip.valueInput?.addEventListener("input", () => {
+      storeCurrentDraftForSelectedPlayer();
       updateCalculations();
       scheduleAutoSave();
     });
     chip.countInput?.addEventListener("input", () => {
+      storeCurrentDraftForSelectedPlayer();
       updateCalculations();
       scheduleAutoSave();
     });
   }
 
-  els.playerNameInput?.addEventListener("input", () => {
-    updateCalculations();
-  });
   els.blindAmountInput?.addEventListener("input", () => {
+    storeCurrentDraftForSelectedPlayer();
     updateCalculations();
     scheduleAutoSave();
   });
 
   els.ongoingPlayerSelect?.addEventListener("change", () => {
     if (!(els.ongoingPlayerSelect instanceof HTMLSelectElement)) return;
-    state.selectedOngoingPlayerId = String(els.ongoingPlayerSelect.value || "").trim();
-    applySelectedPlayerDefaultsFromSaved();
-    updateOngoingPlayerReminder();
-    updateCalculations();
+
+    const nextPlayerId = String(els.ongoingPlayerSelect.value || "").trim();
+    const previousPlayerId = String(state.selectedOngoingPlayerId || "").trim();
+
+    (async () => {
+      if (previousPlayerId) {
+        storeCurrentDraftForSelectedPlayer();
+      }
+      await flushPendingAutoSave();
+
+      state.selectedOngoingPlayerId = nextPlayerId;
+      applySelectedPlayerDraft();
+      updateOngoingPlayerReminder();
+      updateCalculations();
+      setValidationStatus("Modification en temps réel active.");
+    })().catch((err) => {
+      setValidationStatus(`Changement de joueur incomplet (${String(err?.message || "erreur")})`);
+    });
   });
 
   els.validateBtn?.addEventListener("click", () => {
     (async () => {
       try {
-        await saveSelectedPlayerLiveStack({ manual: true });
+        storeCurrentDraftForSelectedPlayer();
+        await flushPendingAutoSave();
+        const payload = getSavePayloadFromCurrentUI();
+        await saveLiveStackPayload(payload, { manual: true });
       } catch (err) {
         setValidationStatus(`Sauvegarde impossible (${String(err?.message || "erreur")})`);
       }
@@ -586,15 +983,24 @@ function bindEvents() {
 
   els.resetBtn?.addEventListener("click", () => {
     applyDefaults();
-    setValidationStatus("Aucun calcul validé pour le moment.");
+    const selected = getSelectedOngoingPlayer();
+    if (els.playerNameInput instanceof HTMLInputElement) {
+      els.playerNameInput.value = String(selected?.playerName || "");
+    }
+    storeCurrentDraftForSelectedPlayer();
+    setValidationStatus("Calculateur réinitialisé pour ce joueur.");
     updateCalculations();
     scheduleAutoSave();
+  });
+
+  window.addEventListener("beforeunload", () => {
+    storeCurrentDraftForSelectedPlayer();
   });
 }
 
 applyDefaults();
 bindEvents();
-setValidationStatus("Aucun calcul validé pour le moment.");
+setValidationStatus("Modification en temps réel active.");
 updateCalculations();
 loadOngoingSessionReminder().then(() => {
   updateCalculations();

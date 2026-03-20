@@ -61,6 +61,8 @@ CREATE TABLE session_live_stacks (
   current_stack DECIMAL(14,4) NOT NULL DEFAULT 0,
   blind_amount DECIMAL(14,4) NULL,
   blinds_remaining_exact DECIMAL(14,6) NULL,
+  chip_values_json LONGTEXT NULL,
+  chip_counts_json LONGTEXT NULL,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (session_id, player_id),
   CONSTRAINT fk_live_stack_entry FOREIGN KEY (session_id, player_id)
