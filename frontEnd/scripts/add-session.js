@@ -96,7 +96,7 @@ let positions = [];
 let sessionsData = { session: [] };
 let playersData = { session: [] };
 let gainsSplit = null;
-let eliminationOrderCounter = 0;
+let isSavingSession = false;
 const editSessionId = new URLSearchParams(window.location.search).get("editSessionId");
 const BUYIN_UNIT_EUR = 10;
 const MAX_BUYINS_PER_PLAYER = 3;
@@ -315,20 +315,15 @@ function getPrefillMiseAmount(prefill = {}) {
 function addRow(prefill = {}) {
   const prefillMise = getPrefillMiseAmount(prefill);
   const prefillGain = Number(prefill.gain ?? 0);
-  const prefillEliminated = prefill.is_eliminated === true
-    || prefill.is_eliminated === 1
-    || prefill.is_eliminated === "1";
 
   const tr = document.createElement("tr");
   tr.innerHTML = `
     <td><select class="p-player">${optionList(players, "id", "name")}</select></td>
     <td><select class="p-position">${optionList(positions, "id", "rang")}</select></td>
     <td><input class="p-mise" type="number" min="0" max="${MAX_BUYINS_PER_PLAYER * BUYIN_UNIT_EUR}" step="${BUYIN_UNIT_EUR}" value="${prefillMise}" /></td>
-    <td style="text-align:center;"><input class="p-eliminated" type="checkbox" ${prefillEliminated ? "checked" : ""} /></td>
     <td class="p-gain-view">${prefillGain}</td>
     <td><button class="btn removeRow" type="button">Supprimer</button></td>
   `;
-  tr.dataset.eliminated = prefillEliminated ? "1" : "0";
   refs.tbody.appendChild(tr);
 
   const playerSelect = tr.querySelector(".p-player");
@@ -353,7 +348,6 @@ function addRow(prefill = {}) {
 
 function setParticipantRows(count) {
   const n = Math.max(1, Number(count) || 1);
-  eliminationOrderCounter = 0;
   refs.tbody.innerHTML = "";
   for (let i = 0; i < n; i += 1) addRow();
   enforceUniqueSelections();
@@ -419,120 +413,8 @@ function rankByPositionId(positionId) {
   return hit ? Number(hit.rang) : null;
 }
 
-function getPositionIdByRank(rank) {
-  const hit = positions.find((p) => Number(p.rang) === Number(rank));
-  return hit ? String(hit.id) : null;
-}
-
 function getSortedPositionDefs() {
   return [...positions].sort((a, b) => Number(a.rang) - Number(b.rang));
-}
-
-function getRowEliminationOrder(row) {
-  const n = Number(row?.dataset?.eliminationOrder || 0);
-  return Number.isInteger(n) && n > 0 ? n : null;
-}
-
-function setRowEliminationOrder(row, value) {
-  if (!row) return;
-  if (!Number.isInteger(value) || value <= 0) {
-    delete row.dataset.eliminationOrder;
-    return;
-  }
-  row.dataset.eliminationOrder = String(value);
-}
-
-function assignPositionsFromEliminationOrder() {
-  const rows = [...refs.tbody.querySelectorAll("tr")];
-  if (rows.length === 0) return;
-
-  const rowCount = rows.length;
-  for (const row of rows) {
-    const eliminated = row.querySelector(".p-eliminated")?.checked === true;
-    row.dataset.eliminated = eliminated ? "1" : "0";
-    if (eliminated && !getRowEliminationOrder(row)) {
-      eliminationOrderCounter += 1;
-      setRowEliminationOrder(row, eliminationOrderCounter);
-    }
-    if (!eliminated) {
-      setRowEliminationOrder(row, null);
-    }
-  }
-
-  const eliminatedRows = rows
-    .filter((row) => row.querySelector(".p-eliminated")?.checked)
-    .sort((a, b) => (getRowEliminationOrder(a) || 0) - (getRowEliminationOrder(b) || 0));
-
-  const desiredRankByRow = new Map();
-  eliminatedRows.forEach((row, index) => {
-    desiredRankByRow.set(row, rowCount - index);
-  });
-
-  const usedRanks = new Set();
-  for (const row of eliminatedRows) {
-    const rank = desiredRankByRow.get(row);
-    const positionId = getPositionIdByRank(rank);
-    const select = row.querySelector(".p-position");
-    if (positionId && select instanceof HTMLSelectElement) {
-      select.value = positionId;
-      usedRanks.add(rank);
-    }
-  }
-
-  const availableRanks = getSortedPositionDefs()
-    .map((p) => Number(p.rang))
-    .filter((rank) => rank >= 1 && rank <= rowCount)
-    .filter((rank) => !usedRanks.has(rank));
-
-  const nonEliminatedRows = rows.filter((row) => !desiredRankByRow.has(row));
-  const rowsNeedingPosition = [];
-  for (const row of nonEliminatedRows) {
-    const select = row.querySelector(".p-position");
-    const currentRank = rankByPositionId(String(select?.value || "").trim());
-    if (currentRank != null && currentRank >= 1 && currentRank <= rowCount && !usedRanks.has(currentRank)) {
-      usedRanks.add(currentRank);
-      continue;
-    }
-    rowsNeedingPosition.push(row);
-  }
-
-  const remainingRanks = availableRanks.filter((rank) => !usedRanks.has(rank));
-  rowsNeedingPosition.forEach((row, index) => {
-    const rank = remainingRanks[index];
-    const positionId = getPositionIdByRank(rank);
-    const select = row.querySelector(".p-position");
-    if (positionId && select instanceof HTMLSelectElement) {
-      select.value = positionId;
-      usedRanks.add(rank);
-    }
-  });
-
-  enforceUniqueSelections();
-  sortRowsByPosition();
-  recalculateDisplayedGains();
-}
-
-function initializeEliminationOrderFromPositions() {
-  const rows = [...refs.tbody.querySelectorAll("tr")];
-  const eliminatedRows = rows
-    .filter((row) => row.querySelector(".p-eliminated")?.checked)
-    .sort((a, b) => {
-      const ar = rankByPositionId(String(a.querySelector(".p-position")?.value || "").trim()) ?? -1;
-      const br = rankByPositionId(String(b.querySelector(".p-position")?.value || "").trim()) ?? -1;
-      return br - ar;
-    });
-
-  eliminatedRows.forEach((row, index) => {
-    row.dataset.eliminated = "1";
-    setRowEliminationOrder(row, index + 1);
-  });
-  rows
-    .filter((row) => !row.querySelector(".p-eliminated")?.checked)
-    .forEach((row) => {
-      row.dataset.eliminated = "0";
-      setRowEliminationOrder(row, null);
-    });
-  eliminationOrderCounter = eliminatedRows.length;
 }
 
 function applyPositionShift(changedSelect) {
@@ -707,7 +589,6 @@ function buildNewSession() {
     const joueurId = String(tr.querySelector(".p-player")?.value || "").trim();
     const positionId = String(tr.querySelector(".p-position")?.value || "").trim();
     const mise = normalizeMiseAmount(tr.querySelector(".p-mise")?.value || 0);
-    const eliminated = tr.querySelector(".p-eliminated")?.checked ? 1 : 0;
     if (!joueurId) throw new Error("Chaque participant doit avoir un joueur.");
     if (!positionId) throw new Error("Chaque participant doit avoir une position.");
     if (mise % BUYIN_UNIT_EUR !== 0) {
@@ -721,7 +602,6 @@ function buildNewSession() {
       joueur_id: joueurId,
       position_id: positionId,
       mise,
-      is_eliminated: eliminated,
       gain: Number(tr.dataset.gain || 0)
     };
   });
@@ -792,7 +672,6 @@ function buildStructuredSessionsFromApi(sessions, entries, buyins, payouts) {
       joueur_id: pid,
       position_id: String(e.position_id || ""),
       mise,
-      is_eliminated: Number(e.is_eliminated || 0) ? 1 : 0,
       gain: Number(payoutTotals.get(key) || 0)
     });
   }
@@ -804,6 +683,45 @@ function buildStructuredSessionsFromApi(sessions, entries, buyins, payouts) {
   }
 
   return [...sessionsById.values()].sort((a, b) => Number(a.id) - Number(b.id));
+}
+
+function buildNewSessionPrefillFromLastSession() {
+  const sessions = Array.isArray(sessionsData.session) ? sessionsData.session : [];
+  if (!sessions.length) return [];
+
+  const lastSession = sessions[sessions.length - 1];
+  const lastParticipants = Array.isArray(lastSession?.participants) ? lastSession.participants : [];
+  if (!lastParticipants.length) return [];
+
+  const validPlayerIds = new Set(players.map((p) => String(p.id || "").trim()).filter(Boolean));
+  const validPositionIds = new Set(positions.map((p) => String(p.id || "").trim()).filter(Boolean));
+
+  const ordered = [...lastParticipants].sort((a, b) => {
+    const ar = rankByPositionId(String(a.position_id || "").trim()) ?? Number.POSITIVE_INFINITY;
+    const br = rankByPositionId(String(b.position_id || "").trim()) ?? Number.POSITIVE_INFINITY;
+    if (ar !== br) return ar - br;
+    return String(a.joueur_id || "").localeCompare(String(b.joueur_id || ""), "fr", { numeric: true, sensitivity: "base" });
+  });
+
+  const usedPlayerIds = new Set();
+  const usedPositionIds = new Set();
+  const out = [];
+  for (const p of ordered) {
+    const joueurId = String(p.joueur_id || "").trim();
+    const positionId = String(p.position_id || "").trim();
+    if (!joueurId || !positionId) continue;
+    if (!validPlayerIds.has(joueurId) || !validPositionIds.has(positionId)) continue;
+    if (usedPlayerIds.has(joueurId) || usedPositionIds.has(positionId)) continue;
+    usedPlayerIds.add(joueurId);
+    usedPositionIds.add(positionId);
+    out.push({
+      joueur_id: joueurId,
+      position_id: positionId,
+      mise: BUYIN_UNIT_EUR,
+      gain: 0
+    });
+  }
+  return out;
 }
 
 function applyEditModeIfNeeded() {
@@ -829,7 +747,6 @@ function applyEditModeIfNeeded() {
     return ar - br;
   });
   for (const p of participants) addRow(p);
-  initializeEliminationOrderFromPositions();
 
   gainsSplit = target.is_closed ? inferGainsSplitFromSession(target) : null;
   recalculateDisplayedGains();
@@ -851,27 +768,52 @@ async function saveSessionJson() {
     }
   }
 
-  const existing = (sessionsData.session || []).some((s) => String(s.id) === String(newSession.id));
+  const sessionId = String(newSession.id);
+  const existing = (sessionsData.session || []).some((s) => String(s.id) === sessionId);
+  const isEditingSameSession = String(editSessionId || "").trim() === sessionId;
 
-  if (existing) {
-    await apiFetch(`/api/sessions/${encodeURIComponent(newSession.id)}`, { method: "DELETE" });
+  async function deleteSessionIfExists(id) {
+    try {
+      await apiFetch(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+      return true;
+    } catch (error) {
+      const message = String(error?.message || "");
+      if (/^API 404\b/.test(message)) return false;
+      throw error;
+    }
   }
 
-  await apiFetch("/api/sessions", {
-    method: "POST",
-    body: JSON.stringify({
-      session_id: Number(newSession.id),
-      session_name: newSession.name,
-      is_closed: newSession.is_closed ? 1 : 0,
-      stack_per_10_eur: newSession.stack_per_10_eur,
-      chip_value_orange: newSession.chip_values.orange,
-      chip_value_black: newSession.chip_values.black,
-      chip_value_green: newSession.chip_values.green,
-      chip_value_yellow: newSession.chip_values.yellow,
-      chip_value_red: newSession.chip_values.red,
-      chip_value_white: newSession.chip_values.white
-    })
-  });
+  async function createSessionRecord() {
+    await apiFetch("/api/sessions", {
+      method: "POST",
+      body: JSON.stringify({
+        session_id: Number(newSession.id),
+        session_name: newSession.name,
+        is_closed: newSession.is_closed ? 1 : 0,
+        stack_per_10_eur: newSession.stack_per_10_eur,
+        chip_value_orange: newSession.chip_values.orange,
+        chip_value_black: newSession.chip_values.black,
+        chip_value_green: newSession.chip_values.green,
+        chip_value_yellow: newSession.chip_values.yellow,
+        chip_value_red: newSession.chip_values.red,
+        chip_value_white: newSession.chip_values.white
+      })
+    });
+  }
+
+  if (existing || isEditingSameSession) {
+    await deleteSessionIfExists(sessionId);
+  }
+
+  try {
+    await createSessionRecord();
+  } catch (error) {
+    const message = String(error?.message || "");
+    const isDuplicateSessionId = /^API 400\b/.test(message) && /duplicate entry/i.test(message) && /sessions\.primary/i.test(message);
+    if (!isDuplicateSessionId) throw error;
+    await deleteSessionIfExists(sessionId);
+    await createSessionRecord();
+  }
 
   for (const p of participants) {
     await apiFetch("/api/entries", {
@@ -879,8 +821,7 @@ async function saveSessionJson() {
       body: JSON.stringify({
         session_id: Number(newSession.id),
         player_id: Number(p.joueur_id),
-        position_id: Number(p.position_id),
-        is_eliminated: Number(p.is_eliminated || 0)
+        position_id: Number(p.position_id)
       })
     });
 
@@ -953,7 +894,17 @@ async function loadData() {
     refs.sessionStatusInput.value = "open";
     refs.stackPer10Input.value = "";
     setChipValuesInInputs({});
-    setParticipantRows(Number(refs.participantCount?.value || 8));
+    const prefillParticipants = buildNewSessionPrefillFromLastSession();
+    if (prefillParticipants.length) {
+      refs.participantCount.value = String(prefillParticipants.length);
+      refs.tbody.innerHTML = "";
+      for (const participant of prefillParticipants) addRow(participant);
+      sortRowsByPosition();
+      recalculateDisplayedGains();
+      updateGainsPoolInfo();
+    } else {
+      setParticipantRows(Number(refs.participantCount?.value || 8));
+    }
     updateGainsButtonLabel();
     updateGainsPoolInfo();
   }
@@ -961,7 +912,6 @@ async function loadData() {
 
 refs.addRowBtn.addEventListener("click", () => {
   addRow();
-  assignPositionsFromEliminationOrder();
 });
 refs.applyCountBtn.addEventListener("click", () => {
   setParticipantRows(Number(refs.participantCount?.value || 1));
@@ -1011,10 +961,23 @@ refs.confirmGainsModalBtn.addEventListener("click", () => {
 });
 refs.saveBtn.addEventListener("click", () => {
   (async () => {
+    if (isSavingSession) return;
+    isSavingSession = true;
+    const previousLabel = refs.saveBtn?.textContent || "Enregistrer la session";
+    if (refs.saveBtn) {
+      refs.saveBtn.disabled = true;
+      refs.saveBtn.textContent = "Enregistrement...";
+    }
     try {
       await finalizeSessionAndGoHome();
     } catch (error) {
       alert(error.message);
+    } finally {
+      isSavingSession = false;
+      if (refs.saveBtn) {
+        refs.saveBtn.disabled = false;
+        refs.saveBtn.textContent = previousLabel;
+      }
     }
   })();
 });
@@ -1022,7 +985,8 @@ refs.tbody.addEventListener("click", (e) => {
   if (!(e.target instanceof HTMLElement)) return;
   if (e.target.classList.contains("removeRow")) {
     e.target.closest("tr")?.remove();
-    assignPositionsFromEliminationOrder();
+    sortRowsByPosition();
+    recalculateDisplayedGains();
     updateGainsPoolInfo();
   }
 });
@@ -1039,9 +1003,6 @@ refs.tbody.addEventListener("change", (e) => {
     sanitizeMiseInput(e.target);
     updateGainsPoolInfo();
     updateGainsButtonLabel();
-  }
-  if (e.target.classList.contains("p-eliminated")) {
-    assignPositionsFromEliminationOrder();
   }
   if (e.target.classList.contains("p-mise") && refs.gainsModal.style.display === "flex") {
     buildGainSelectOptions();

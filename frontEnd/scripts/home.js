@@ -634,245 +634,6 @@ function getSummarySortValue(p, key, sessionId) {
   return p[key];
 }
 
-function getSessionCardRows(sessionCard) {
-  if (!(sessionCard instanceof HTMLElement)) return [];
-  return [...sessionCard.querySelectorAll(".sessionCard__table tbody tr[data-player-id]")];
-}
-
-function getSessionCardRowRank(row) {
-  return parsePositiveInt(row?.dataset?.rank);
-}
-
-function getSessionCardRowEliminationOrder(row) {
-  return parsePositiveInt(row?.dataset?.eliminationOrder);
-}
-
-function setSessionCardRowEliminationOrder(row, order) {
-  if (!(row instanceof HTMLElement)) return;
-  const normalized = parsePositiveInt(order);
-  if (normalized == null) {
-    delete row.dataset.eliminationOrder;
-    return;
-  }
-  row.dataset.eliminationOrder = String(normalized);
-}
-
-function setSessionCardRowRank(row, rank, rankToPositionId) {
-  if (!(row instanceof HTMLElement)) return;
-  const normalized = parsePositiveInt(rank);
-  if (normalized == null) return;
-  row.dataset.rank = String(normalized);
-  const mappedPositionId = rankToPositionId.get(normalized);
-  if (mappedPositionId) {
-    row.dataset.positionId = mappedPositionId;
-  }
-  const rankCell = row.querySelector(".sessionRankCell");
-  if (rankCell) rankCell.textContent = String(normalized);
-  row.classList.remove("posGold", "posSilver", "posBronze");
-  if (normalized === 1) row.classList.add("posGold");
-  if (normalized === 2) row.classList.add("posSilver");
-  if (normalized === 3) row.classList.add("posBronze");
-}
-
-function sortSessionCardRowsByRank(sessionCard) {
-  const tbody = sessionCard?.querySelector(".sessionCard__table tbody");
-  if (!(tbody instanceof HTMLElement)) return;
-  const rows = getSessionCardRows(sessionCard);
-  rows.sort((a, b) => {
-    const ar = getSessionCardRowRank(a) ?? Number.POSITIVE_INFINITY;
-    const br = getSessionCardRowRank(b) ?? Number.POSITIVE_INFINITY;
-    return ar - br;
-  });
-  for (const row of rows) tbody.appendChild(row);
-}
-
-function getSessionCardRankToPositionIdMap(sessionCard) {
-  const map = new Map();
-  for (const row of getSessionCardRows(sessionCard)) {
-    const rank = parsePositiveInt(row.dataset.baseRank || row.dataset.rank);
-    const positionId = String(row.dataset.basePositionId || row.dataset.positionId || "").trim();
-    if (rank != null && positionId) map.set(rank, positionId);
-  }
-  return map;
-}
-
-function assignSessionRanksFromEliminationOrder(sessionCard) {
-  const rows = getSessionCardRows(sessionCard);
-  if (!rows.length) return;
-
-  let maxOrder = rows.reduce((max, row) => Math.max(max, getSessionCardRowEliminationOrder(row) || 0), 0);
-  for (const row of rows) {
-    if (row.dataset.eliminated === "1" && !getSessionCardRowEliminationOrder(row)) {
-      maxOrder += 1;
-      setSessionCardRowEliminationOrder(row, maxOrder);
-    }
-    if (row.dataset.eliminated !== "1") {
-      setSessionCardRowEliminationOrder(row, null);
-    }
-  }
-
-  const rowCount = rows.length;
-  const rankToPositionId = getSessionCardRankToPositionIdMap(sessionCard);
-  const eliminatedRows = rows
-    .filter((row) => row.dataset.eliminated === "1")
-    .sort((a, b) => (getSessionCardRowEliminationOrder(a) || 0) - (getSessionCardRowEliminationOrder(b) || 0));
-
-  const desiredRankByRow = new Map();
-  eliminatedRows.forEach((row, idx) => desiredRankByRow.set(row, rowCount - idx));
-
-  const usedRanks = new Set();
-  for (const row of eliminatedRows) {
-    const rank = desiredRankByRow.get(row);
-    if (rank == null) continue;
-    setSessionCardRowRank(row, rank, rankToPositionId);
-    usedRanks.add(rank);
-  }
-
-  const nonEliminatedRows = rows
-    .filter((row) => !desiredRankByRow.has(row))
-    .sort((a, b) => (getSessionCardRowRank(a) || Number.POSITIVE_INFINITY) - (getSessionCardRowRank(b) || Number.POSITIVE_INFINITY));
-
-  const remainingRanks = [];
-  for (let rank = 1; rank <= rowCount; rank += 1) {
-    if (!usedRanks.has(rank)) remainingRanks.push(rank);
-  }
-  nonEliminatedRows.forEach((row, idx) => {
-    const rank = remainingRanks[idx];
-    if (rank == null) return;
-    setSessionCardRowRank(row, rank, rankToPositionId);
-    usedRanks.add(rank);
-  });
-
-  sortSessionCardRowsByRank(sessionCard);
-}
-
-function getSessionCardStateSignature(sessionCard) {
-  const rows = getSessionCardRows(sessionCard).map((row) => ({
-    playerId: String(row.dataset.playerId || "").trim(),
-    rank: getSessionCardRowRank(row) || 0,
-    isEliminated: row.dataset.eliminated === "1" ? 1 : 0,
-    eliminationOrder: getSessionCardRowEliminationOrder(row) || 0
-  }));
-  rows.sort((a, b) => String(a.playerId).localeCompare(String(b.playerId), "fr", { numeric: true, sensitivity: "base" }));
-  return JSON.stringify(rows);
-}
-
-function markSessionCardDirtyState(sessionCard) {
-  if (!(sessionCard instanceof HTMLElement)) return;
-  const current = getSessionCardStateSignature(sessionCard);
-  const initial = String(sessionCard.dataset.initialStateSignature || "");
-  const isDirty = current !== initial;
-  sessionCard.dataset.dirty = isDirty ? "1" : "0";
-  sessionCard.classList.toggle("sessionCard--dirty", isDirty);
-
-  const confirmBtn = sessionCard.querySelector(".sessionConfirmEliminationBtn");
-  if (confirmBtn instanceof HTMLButtonElement) {
-    confirmBtn.disabled = !isDirty;
-  }
-  const hint = sessionCard.querySelector(".sessionPendingHint");
-  if (hint instanceof HTMLElement) {
-    hint.textContent = isDirty ? "Modifications non confirmees" : "Aucune modification";
-    hint.classList.toggle("isDirty", isDirty);
-  }
-}
-
-function initializeSessionCardEliminationState(sessionCard) {
-  if (!(sessionCard instanceof HTMLElement)) return;
-  if (sessionCard.dataset.sessionOngoing !== "1") return;
-
-  const rows = getSessionCardRows(sessionCard);
-  const eliminatedRows = rows
-    .filter((row) => row.dataset.eliminated === "1")
-    .sort((a, b) => {
-      const ar = getSessionCardRowRank(a) ?? 0;
-      const br = getSessionCardRowRank(b) ?? 0;
-      return br - ar;
-    });
-  eliminatedRows.forEach((row, idx) => setSessionCardRowEliminationOrder(row, idx + 1));
-  rows
-    .filter((row) => row.dataset.eliminated !== "1")
-    .forEach((row) => setSessionCardRowEliminationOrder(row, null));
-
-  assignSessionRanksFromEliminationOrder(sessionCard);
-  sessionCard.dataset.initialStateSignature = getSessionCardStateSignature(sessionCard);
-  markSessionCardDirtyState(sessionCard);
-}
-
-function handleSessionEliminationToggle(input) {
-  if (!(input instanceof HTMLInputElement)) return;
-  const row = input.closest("tr");
-  const sessionCard = input.closest(".sessionCard");
-  if (!(row instanceof HTMLElement) || !(sessionCard instanceof HTMLElement)) return;
-
-  row.dataset.eliminated = input.checked ? "1" : "0";
-  if (!input.checked) {
-    setSessionCardRowEliminationOrder(row, null);
-  } else if (!getSessionCardRowEliminationOrder(row)) {
-    const rows = getSessionCardRows(sessionCard);
-    const nextOrder = rows.reduce((max, item) => Math.max(max, getSessionCardRowEliminationOrder(item) || 0), 0) + 1;
-    setSessionCardRowEliminationOrder(row, nextOrder);
-  }
-
-  assignSessionRanksFromEliminationOrder(sessionCard);
-  markSessionCardDirtyState(sessionCard);
-}
-
-function buildSessionCardUpdatePayload(sessionCard) {
-  const sessionId = String(sessionCard?.dataset?.sessionId || "").trim();
-  if (!sessionId) {
-    throw new Error("Session introuvable.");
-  }
-
-  const payload = [];
-  for (const row of getSessionCardRows(sessionCard)) {
-    const playerId = String(row.dataset.playerId || "").trim();
-    const positionId = parsePositiveInt(row.dataset.positionId || row.dataset.basePositionId);
-    if (!playerId || positionId == null) {
-      throw new Error("Impossible de determiner le joueur ou la position.");
-    }
-    payload.push({
-      sessionId,
-      playerId,
-      positionId,
-      isEliminated: row.dataset.eliminated === "1" ? 1 : 0
-    });
-  }
-
-  const uniquePositionIds = new Set(payload.map((item) => String(item.positionId)));
-  if (uniquePositionIds.size !== payload.length) {
-    throw new Error("Chaque joueur doit avoir une position unique.");
-  }
-  return payload;
-}
-
-async function confirmSessionEliminations(sessionCard) {
-  if (!(sessionCard instanceof HTMLElement)) return;
-  const confirmBtn = sessionCard.querySelector(".sessionConfirmEliminationBtn");
-  if (confirmBtn instanceof HTMLButtonElement) {
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = "Confirmation...";
-  }
-
-  try {
-    const updates = buildSessionCardUpdatePayload(sessionCard);
-    for (const item of updates) {
-      await apiFetch(`/api/entries/${encodeURIComponent(item.sessionId)}/${encodeURIComponent(item.playerId)}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          position_id: item.positionId,
-          is_eliminated: item.isEliminated
-        })
-      });
-    }
-    setStatus(`Session ${updates[0]?.sessionId || ""} mise a jour`, "ok");
-    await loadData();
-  } finally {
-    if (confirmBtn instanceof HTMLButtonElement) {
-      confirmBtn.textContent = "Confirmer les eliminations";
-    }
-  }
-}
-
 function bindSessionCardActions() {
   els.leaderboard.querySelectorAll(".sessionDeleteBtn").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -881,30 +642,6 @@ function bindSessionCardActions() {
       } catch (err) {
         console.error(err);
         setStatus("Suppression impossible", "bad");
-      }
-    });
-  });
-
-  const ongoingCards = [...els.leaderboard.querySelectorAll(".sessionCard[data-session-ongoing='1']")];
-  ongoingCards.forEach((sessionCard) => initializeSessionCardEliminationState(sessionCard));
-
-  els.leaderboard.querySelectorAll(".sessionEliminateCheckbox").forEach((checkbox) => {
-    checkbox.addEventListener("change", () => {
-      handleSessionEliminationToggle(checkbox);
-    });
-  });
-
-  els.leaderboard.querySelectorAll(".sessionConfirmEliminationBtn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const sessionCard = btn.closest(".sessionCard");
-      if (!(sessionCard instanceof HTMLElement)) return;
-      try {
-        await confirmSessionEliminations(sessionCard);
-      } catch (err) {
-        console.error(err);
-        setStatus("Confirmation impossible", "bad");
-        alert(String(err?.message || "Impossible de confirmer les eliminations."));
-        markSessionCardDirtyState(sessionCard);
       }
     });
   });
@@ -934,22 +671,14 @@ function renderSessionTablesHTML() {
         const statusStyle = s.isOngoing
           ? "background:rgba(241,196,15,.16);border:1px solid rgba(241,196,15,.55);color:#ffe9a6;"
           : "background:rgba(47,181,116,.16);border:1px solid rgba(47,181,116,.55);color:#d7ffe8;";
-        const eliminationOrderByPlayerId = new Map(
-          rows
-            .filter((row) => Number(row.is_eliminated || 0) === 1)
-            .sort((a, b) => Number(b.position || 0) - Number(a.position || 0))
-            .map((row, idx) => [String(row.joueur_id || "").trim(), idx + 1])
-        );
         return `
           <section class="sessionCard" data-session-id="${escapeAttr(s.id)}" data-session-ongoing="${s.isOngoing ? "1" : "0"}">
             <div class="sessionCard__title" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
               <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                 <span>${escapeHTML(s.name)}</span>
                 <span style="padding:3px 8px;border-radius:999px;font-size:11px;font-weight:700;${statusStyle}">${statusText}</span>
-                ${s.isOngoing ? '<span class="sessionPendingHint">Aucune modification</span>' : ""}
               </span>
               <span style="display:flex;gap:8px;">
-                ${s.isOngoing ? '<button class="btn sessionConfirmEliminationBtn" type="button">Confirmer les eliminations</button>' : ""}
                 <a class="btn btnLink" href="./add-session.html?editSessionId=${escapeAttr(s.id)}">Modifier</a>
                 <button class="btn sessionDeleteBtn" type="button" data-session-id="${escapeAttr(s.id)}">Supprimer</button>
               </span>
@@ -962,7 +691,6 @@ function renderSessionTablesHTML() {
                     <th>Joueurs</th>
                     <th>Mises</th>
                     <th>Gains</th>
-                    ${s.isOngoing ? "<th>Elimine</th>" : ""}
                   </tr>
                 </thead>
                 <tbody>
@@ -970,8 +698,6 @@ function renderSessionTablesHTML() {
                     const pos = String(r.position ?? "");
                     const playerId = String(r.joueur_id ?? "").trim();
                     const positionId = String(r.position_id ?? "").trim();
-                    const isEliminated = Number(r.is_eliminated || 0) === 1;
-                    const elimOrder = eliminationOrderByPlayerId.get(playerId) || null;
                     const posClass = pos === "1" ? "posGold" : (pos === "2" ? "posSilver" : (pos === "3" ? "posBronze" : ""));
                     return `
                       <tr
@@ -981,21 +707,11 @@ function renderSessionTablesHTML() {
                         data-base-position-id="${escapeAttr(positionId)}"
                         data-rank="${escapeAttr(pos)}"
                         data-base-rank="${escapeAttr(pos)}"
-                        data-eliminated="${isEliminated ? "1" : "0"}"
-                        ${elimOrder ? `data-elimination-order="${String(elimOrder)}"` : ""}
                       >
                         <td class="sessionRankCell">${escapeHTML(pos)}</td>
                         <td>${escapeHTML(String(r.joueur ?? ""))}</td>
                         <td>${escapeHTML(String(r.mise ?? ""))} €</td>
                         <td>${escapeHTML(String(r.gain ?? ""))} €</td>
-                        ${s.isOngoing ? `
-                          <td>
-                            <label class="sessionElimToggle">
-                              <input class="sessionEliminateCheckbox" type="checkbox" ${isEliminated ? "checked" : ""} />
-                              <span>Elimine</span>
-                            </label>
-                          </td>
-                        ` : ""}
                       </tr>
                     `;
                   }).join("")}
